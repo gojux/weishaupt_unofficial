@@ -1,0 +1,36 @@
+# Development environment: Home Assistant 2026.9.3 with the integration
+# mounted, talking to a simulated heat pump.
+#
+#   docker compose up            Home Assistant on http://localhost:8123,
+#                                add the integration with host "modbus-simulator", port 502
+#   docker compose run --rm tests   run the test suite
+#   docker compose down -v       also discards the Home Assistant configuration
+services:
+  homeassistant:
+    image: ghcr.io/home-assistant/home-assistant:2026.9.3
+    ports:
+      - "8123:8123"
+    volumes:
+      - config:/config
+      - ./dev/configuration.yaml:/config/configuration.yaml:ro
+      - ./custom_components/weishaupt_unofficial:/config/custom_components/weishaupt_unofficial:ro
+    depends_on:
+      - modbus-simulator
+
+  modbus-simulator:
+    image: ghcr.io/home-assistant/home-assistant:2026.9.3
+    entrypoint: ["python", "/app/modbus_simulator.py"]
+    volumes:
+      - ./tests/modbus_simulator.py:/app/modbus_simulator.py:ro
+
+  tests:
+    build:
+      context: .
+      dockerfile: tests/Dockerfile
+    volumes:
+      - .:/app
+    profiles:
+      - test
+
+volumes:
+  config:

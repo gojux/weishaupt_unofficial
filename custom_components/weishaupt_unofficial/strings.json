@@ -1,0 +1,374 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Set up Weishaupt heat pump (Modbus TCP)",
+        "description": "Enter a name and the connection details of the heat pump.",
+        "data": {
+          "name": "Name",
+          "host": "IP address",
+          "port": "Port",
+          "device_id": "Modbus device ID",
+          "scan_interval": "Polling interval (seconds)"
+        }
+      },
+      "reconfigure": {
+        "title": "Update heat pump connection",
+        "description": "Update the name and connection details of the heat pump.",
+        "data": {
+          "name": "Name",
+          "host": "IP address",
+          "port": "Port",
+          "device_id": "Modbus device ID"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Could not connect to the heat pump.",
+      "already_configured": "Another entry already uses this IP address, port and device ID."
+    },
+    "abort": {
+      "already_configured": "This device is already configured.",
+      "reconfigure_successful": "Connection settings updated successfully."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "sections": {
+          "general": {
+            "name": "General",
+            "data": {
+              "scan_interval": "Polling interval (seconds)"
+            }
+          },
+          "heating_circuit_1": {
+            "name": "Heating circuit 1",
+            "data": {
+              "heating_circuit_1_current_temp_source": "Heating circuit 1: room temperature source",
+              "heating_circuit_1_current_temp_entity_id": "Room temperature entity (when \"Use a Home Assistant entity\" is selected)"
+            }
+          },
+          "heating_circuit_2": {
+            "name": "Heating circuit 2",
+            "data": {
+              "heating_circuit_2_current_temp_source": "Heating circuit 2: room temperature source",
+              "heating_circuit_2_current_temp_entity_id": "Room temperature entity (when \"Use a Home Assistant entity\" is selected)"
+            }
+          },
+          "heating_circuit_3": {
+            "name": "Heating circuit 3",
+            "data": {
+              "heating_circuit_3_current_temp_source": "Heating circuit 3: room temperature source",
+              "heating_circuit_3_current_temp_entity_id": "Room temperature entity (when \"Use a Home Assistant entity\" is selected)"
+            }
+          },
+          "heating_circuit_4": {
+            "name": "Heating circuit 4",
+            "data": {
+              "heating_circuit_4_current_temp_source": "Heating circuit 4: room temperature source",
+              "heating_circuit_4_current_temp_entity_id": "Room temperature entity (when \"Use a Home Assistant entity\" is selected)"
+            }
+          }
+        }
+      }
+    }
+  },
+  "selector": {
+    "current_temp_source": {
+      "options": {
+        "none": "Don't show a current temperature",
+        "modbus": "Read from heat pump (Modbus room sensor)",
+        "entity": "Use a Home Assistant entity"
+      }
+    }
+  },
+  "entity": {
+    "water_heater": {
+      "dhw": {
+        "name": "Hot water",
+        "state": {
+          "heating": "Heating",
+          "idle": "Idle"
+        }
+      }
+    },
+    "climate": {
+      "heating_circuit": {
+        "name": "Heating circuit {circuit}",
+        "state_attributes": {
+          "preset_mode": {
+            "state": {
+              "comfort": "Comfort",
+              "normal": "Normal",
+              "setback": "Setback"
+            }
+          }
+        }
+      }
+    },
+    "select": {
+      "system_mode": {
+        "name": "System operating mode",
+        "state": {
+          "automatic": "Automatic",
+          "heating": "Heating",
+          "cooling": "Cooling",
+          "summer": "Summer",
+          "standby": "Standby",
+          "second_generator": "Second heat generator"
+        }
+      }
+    },
+    "number": {
+      "dhw_lowered_target_temp": {
+        "name": "Hot water lowered target temperature"
+      },
+      "dhw_push_duration": {
+        "name": "Hot water push duration"
+      },
+      "pv_power_setpoint": {
+        "name": "PV power setpoint"
+      }
+    },
+    "binary_sensor": {
+      "fault": {
+        "name": "Fault"
+      },
+      "second_generator_active": {
+        "name": "Second heat generator"
+      },
+      "e_heater_1_active": {
+        "name": "Electric heater 1"
+      },
+      "e_heater_2_active": {
+        "name": "Electric heater 2"
+      }
+    },
+    "sensor": {
+      "outdoor_temp_1": {
+        "name": "Outdoor temperature 1"
+      },
+      "outdoor_temp_2": {
+        "name": "Outdoor temperature 2"
+      },
+      "error_code": {
+        "name": "Error code"
+      },
+      "warning_code": {
+        "name": "Warning code"
+      },
+      "fault_free_code": {
+        "name": "Fault-free code"
+      },
+      "power_demand": {
+        "name": "Power demand"
+      },
+      "electrical_power_input": {
+        "name": "Electrical power input"
+      },
+      "heat_pump_flow_temp": {
+        "name": "Heat pump flow temperature"
+      },
+      "heat_pump_return_temp": {
+        "name": "Heat pump return temperature"
+      },
+      "hydraulic_separator_temp": {
+        "name": "Hydraulic separator temperature"
+      },
+      "regenerative_temp": {
+        "name": "Regenerative temperature"
+      },
+      "buffer_temp": {
+        "name": "Buffer temperature"
+      },
+      "total_flow_temp": {
+        "name": "Total flow temperature"
+      },
+      "dhw_temp": {
+        "name": "Hot water temperature"
+      },
+      "dhw_active_target_temp": {
+        "name": "Hot water active target temperature"
+      },
+      "hc_room_temp": {
+        "name": "Heating circuit {circuit} room temperature"
+      },
+      "hc_flow_target_temp": {
+        "name": "Heating circuit {circuit} flow target temperature"
+      },
+      "hc_flow_temp": {
+        "name": "Heating circuit {circuit} flow temperature"
+      },
+      "second_generator_operating_hours": {
+        "name": "Second heat generator operating hours"
+      },
+      "e_heater_1_operating_hours": {
+        "name": "Electric heater 1 operating hours"
+      },
+      "e_heater_2_operating_hours": {
+        "name": "Electric heater 2 operating hours"
+      },
+      "energy_total_today": {
+        "name": "Total energy today"
+      },
+      "energy_total_yesterday": {
+        "name": "Total energy yesterday"
+      },
+      "energy_total_month": {
+        "name": "Total energy this month"
+      },
+      "energy_total_year": {
+        "name": "Total energy this year"
+      },
+      "energy_heating_today": {
+        "name": "Heating energy today"
+      },
+      "energy_heating_yesterday": {
+        "name": "Heating energy yesterday"
+      },
+      "energy_heating_month": {
+        "name": "Heating energy this month"
+      },
+      "energy_heating_year": {
+        "name": "Heating energy this year"
+      },
+      "energy_dhw_today": {
+        "name": "Hot water energy today"
+      },
+      "energy_dhw_yesterday": {
+        "name": "Hot water energy yesterday"
+      },
+      "energy_dhw_month": {
+        "name": "Hot water energy this month"
+      },
+      "energy_dhw_year": {
+        "name": "Hot water energy this year"
+      },
+      "energy_cooling_today": {
+        "name": "Cooling energy today"
+      },
+      "energy_cooling_yesterday": {
+        "name": "Cooling energy yesterday"
+      },
+      "energy_cooling_month": {
+        "name": "Cooling energy this month"
+      },
+      "energy_cooling_year": {
+        "name": "Cooling energy this year"
+      },
+      "energy_electrical_today": {
+        "name": "Electrical energy today"
+      },
+      "energy_electrical_yesterday": {
+        "name": "Electrical energy yesterday"
+      },
+      "energy_electrical_month": {
+        "name": "Electrical energy this month"
+      },
+      "energy_electrical_year": {
+        "name": "Electrical energy this year"
+      },
+      "heat_pump_status": {
+        "name": "Heat pump status",
+        "state": {
+          "undefined": "Undefined",
+          "relay_test": "Relay test",
+          "emergency_stop": "Emergency stop",
+          "diagnosis": "Diagnosis",
+          "manual_mode": "Manual mode",
+          "manual_heating": "Manual heating",
+          "manual_cooling": "Manual cooling",
+          "manual_defrost": "Manual defrost",
+          "defrost": "Defrost",
+          "second_generator": "Second heat generator",
+          "utility_lock": "Utility lock",
+          "sg_tariff": "Smart grid tariff",
+          "sg_maximum": "Smart grid maximum",
+          "tariff_charging": "Tariff charging",
+          "increased_operation": "Increased operation",
+          "idle_time": "Idle time",
+          "standby": "Standby",
+          "flushing": "Flushing",
+          "frost_protection": "Frost protection",
+          "heating": "Heating",
+          "hot_water": "Hot water",
+          "legionella_protection": "Legionella protection",
+          "heating_cooling_switchover": "Heating/cooling switchover",
+          "cooling": "Cooling",
+          "passive_cooling": "Passive cooling",
+          "summer_mode": "Summer mode",
+          "swimming_pool": "Swimming pool",
+          "vacation": "Vacation",
+          "screed_drying": "Screed drying",
+          "blocked": "Blocked",
+          "lock_outdoor_temp": "Lock: outdoor temperature",
+          "lock_summer": "Lock: summer",
+          "lock_winter": "Lock: winter",
+          "operating_limit": "Operating limit",
+          "heating_circuit_lock": "Heating circuit lock",
+          "readiness": "Readiness",
+          "regenerative": "Regenerative",
+          "sgr3_heating": "SG Ready 3 heating",
+          "sgr3_cooling": "SG Ready 3 cooling",
+          "sgr3_hot_water": "SG Ready 3 hot water",
+          "sgr4_heating": "SG Ready 4 heating",
+          "sgr4_cooling": "SG Ready 4 cooling",
+          "sgr4_hot_water": "SG Ready 4 hot water",
+          "oil_recirculation": "Oil recirculation",
+          "unknown_status": "Unknown status"
+        }
+      },
+      "system_status": {
+        "name": "System status",
+        "state": {
+          "undefined": "Undefined",
+          "relay_test": "Relay test",
+          "emergency_stop": "Emergency stop",
+          "diagnosis": "Diagnosis",
+          "manual_mode": "Manual mode",
+          "manual_heating": "Manual heating",
+          "manual_cooling": "Manual cooling",
+          "manual_defrost": "Manual defrost",
+          "defrost": "Defrost",
+          "second_generator": "Second heat generator",
+          "utility_lock": "Utility lock",
+          "sg_tariff": "Smart grid tariff",
+          "sg_maximum": "Smart grid maximum",
+          "tariff_charging": "Tariff charging",
+          "increased_operation": "Increased operation",
+          "idle_time": "Idle time",
+          "standby": "Standby",
+          "flushing": "Flushing",
+          "frost_protection": "Frost protection",
+          "heating": "Heating",
+          "hot_water": "Hot water",
+          "legionella_protection": "Legionella protection",
+          "heating_cooling_switchover": "Heating/cooling switchover",
+          "cooling": "Cooling",
+          "passive_cooling": "Passive cooling",
+          "summer_mode": "Summer mode",
+          "swimming_pool": "Swimming pool",
+          "vacation": "Vacation",
+          "screed_drying": "Screed drying",
+          "blocked": "Blocked",
+          "lock_outdoor_temp": "Lock: outdoor temperature",
+          "lock_summer": "Lock: summer",
+          "lock_winter": "Lock: winter",
+          "operating_limit": "Operating limit",
+          "heating_circuit_lock": "Heating circuit lock",
+          "readiness": "Readiness",
+          "regenerative": "Regenerative",
+          "sgr3_heating": "SG Ready 3 heating",
+          "sgr3_cooling": "SG Ready 3 cooling",
+          "sgr3_hot_water": "SG Ready 3 hot water",
+          "sgr4_heating": "SG Ready 4 heating",
+          "sgr4_cooling": "SG Ready 4 cooling",
+          "sgr4_hot_water": "SG Ready 4 hot water",
+          "oil_recirculation": "Oil recirculation",
+          "unknown_status": "Unknown status"
+        }
+      }
+    }
+  }
+}

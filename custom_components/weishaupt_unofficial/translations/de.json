@@ -1,0 +1,374 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Weishaupt-Wärmepumpe (Modbus TCP) einrichten",
+        "description": "Gib einen Namen und die Verbindungsdaten der Wärmepumpe ein.",
+        "data": {
+          "name": "Name",
+          "host": "IP-Adresse",
+          "port": "Port",
+          "device_id": "Modbus-Geräte-ID",
+          "scan_interval": "Abfrageintervall (Sekunden)"
+        }
+      },
+      "reconfigure": {
+        "title": "Wärmepumpen-Verbindung aktualisieren",
+        "description": "Aktualisiere Namen und Verbindungsdaten der Wärmepumpe.",
+        "data": {
+          "name": "Name",
+          "host": "IP-Adresse",
+          "port": "Port",
+          "device_id": "Modbus-Geräte-ID"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Verbindung zur Wärmepumpe konnte nicht hergestellt werden.",
+      "already_configured": "Ein anderer Eintrag verwendet bereits diese IP-Adresse, Port und Geräte-ID."
+    },
+    "abort": {
+      "already_configured": "Dieses Gerät ist bereits konfiguriert.",
+      "reconfigure_successful": "Verbindungseinstellungen erfolgreich aktualisiert."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "sections": {
+          "general": {
+            "name": "Allgemein",
+            "data": {
+              "scan_interval": "Abfrageintervall (Sekunden)"
+            }
+          },
+          "heating_circuit_1": {
+            "name": "Heizkreis 1",
+            "data": {
+              "heating_circuit_1_current_temp_source": "Heizkreis 1: Quelle Raumtemperatur",
+              "heating_circuit_1_current_temp_entity_id": "Raumtemperatur-Entity (wenn \"Home-Assistant-Entity verwenden\" ausgewählt)"
+            }
+          },
+          "heating_circuit_2": {
+            "name": "Heizkreis 2",
+            "data": {
+              "heating_circuit_2_current_temp_source": "Heizkreis 2: Quelle Raumtemperatur",
+              "heating_circuit_2_current_temp_entity_id": "Raumtemperatur-Entity (wenn \"Home-Assistant-Entity verwenden\" ausgewählt)"
+            }
+          },
+          "heating_circuit_3": {
+            "name": "Heizkreis 3",
+            "data": {
+              "heating_circuit_3_current_temp_source": "Heizkreis 3: Quelle Raumtemperatur",
+              "heating_circuit_3_current_temp_entity_id": "Raumtemperatur-Entity (wenn \"Home-Assistant-Entity verwenden\" ausgewählt)"
+            }
+          },
+          "heating_circuit_4": {
+            "name": "Heizkreis 4",
+            "data": {
+              "heating_circuit_4_current_temp_source": "Heizkreis 4: Quelle Raumtemperatur",
+              "heating_circuit_4_current_temp_entity_id": "Raumtemperatur-Entity (wenn \"Home-Assistant-Entity verwenden\" ausgewählt)"
+            }
+          }
+        }
+      }
+    }
+  },
+  "selector": {
+    "current_temp_source": {
+      "options": {
+        "none": "Keine aktuelle Temperatur anzeigen",
+        "modbus": "Von der Wärmepumpe lesen (Modbus-Raumfühler)",
+        "entity": "Home-Assistant-Entity verwenden"
+      }
+    }
+  },
+  "entity": {
+    "water_heater": {
+      "dhw": {
+        "name": "Warmwasser",
+        "state": {
+          "heating": "Erwärmung",
+          "idle": "Bereit"
+        }
+      }
+    },
+    "climate": {
+      "heating_circuit": {
+        "name": "Heizkreis {circuit}",
+        "state_attributes": {
+          "preset_mode": {
+            "state": {
+              "comfort": "Komfort",
+              "normal": "Normal",
+              "setback": "Absenk"
+            }
+          }
+        }
+      }
+    },
+    "select": {
+      "system_mode": {
+        "name": "Systembetriebsart",
+        "state": {
+          "automatic": "Automatik",
+          "heating": "Heizen",
+          "cooling": "Kühlen",
+          "summer": "Sommer",
+          "standby": "Standby",
+          "second_generator": "2. Wärmeerzeuger"
+        }
+      }
+    },
+    "number": {
+      "dhw_lowered_target_temp": {
+        "name": "Warmwasser Absenk-Solltemperatur"
+      },
+      "dhw_push_duration": {
+        "name": "Warmwasser-Push Dauer"
+      },
+      "pv_power_setpoint": {
+        "name": "PV-Leistungsvorgabe"
+      }
+    },
+    "binary_sensor": {
+      "fault": {
+        "name": "Störung"
+      },
+      "second_generator_active": {
+        "name": "2. Wärmeerzeuger"
+      },
+      "e_heater_1_active": {
+        "name": "E-Heizung 1"
+      },
+      "e_heater_2_active": {
+        "name": "E-Heizung 2"
+      }
+    },
+    "sensor": {
+      "outdoor_temp_1": {
+        "name": "Außentemperatur 1"
+      },
+      "outdoor_temp_2": {
+        "name": "Außentemperatur 2"
+      },
+      "error_code": {
+        "name": "Fehlercode"
+      },
+      "warning_code": {
+        "name": "Warncode"
+      },
+      "fault_free_code": {
+        "name": "Fehlerfrei-Code"
+      },
+      "power_demand": {
+        "name": "Leistungsanforderung"
+      },
+      "electrical_power_input": {
+        "name": "Elektrische Leistungsaufnahme"
+      },
+      "heat_pump_flow_temp": {
+        "name": "Wärmepumpe Vorlauftemperatur"
+      },
+      "heat_pump_return_temp": {
+        "name": "Wärmepumpe Rücklauftemperatur"
+      },
+      "hydraulic_separator_temp": {
+        "name": "Temperatur Hydraulische Weiche"
+      },
+      "regenerative_temp": {
+        "name": "Regenerativ-Temperatur"
+      },
+      "buffer_temp": {
+        "name": "Puffertemperatur"
+      },
+      "total_flow_temp": {
+        "name": "Summenvorlauftemperatur"
+      },
+      "dhw_temp": {
+        "name": "Warmwassertemperatur"
+      },
+      "dhw_active_target_temp": {
+        "name": "Warmwasser-Solltemperatur (aktiv)"
+      },
+      "hc_room_temp": {
+        "name": "Heizkreis {circuit} Raumtemperatur"
+      },
+      "hc_flow_target_temp": {
+        "name": "Heizkreis {circuit} Vorlaufsolltemperatur"
+      },
+      "hc_flow_temp": {
+        "name": "Heizkreis {circuit} Vorlauftemperatur"
+      },
+      "second_generator_operating_hours": {
+        "name": "Betriebsstunden 2. Wärmeerzeuger"
+      },
+      "e_heater_1_operating_hours": {
+        "name": "Betriebsstunden E-Heizung 1"
+      },
+      "e_heater_2_operating_hours": {
+        "name": "Betriebsstunden E-Heizung 2"
+      },
+      "energy_total_today": {
+        "name": "Gesamt Energie heute"
+      },
+      "energy_total_yesterday": {
+        "name": "Gesamt Energie gestern"
+      },
+      "energy_total_month": {
+        "name": "Gesamt Energie Monat"
+      },
+      "energy_total_year": {
+        "name": "Gesamt Energie Jahr"
+      },
+      "energy_heating_today": {
+        "name": "Heizen Energie heute"
+      },
+      "energy_heating_yesterday": {
+        "name": "Heizen Energie gestern"
+      },
+      "energy_heating_month": {
+        "name": "Heizen Energie Monat"
+      },
+      "energy_heating_year": {
+        "name": "Heizen Energie Jahr"
+      },
+      "energy_dhw_today": {
+        "name": "Warmwasser Energie heute"
+      },
+      "energy_dhw_yesterday": {
+        "name": "Warmwasser Energie gestern"
+      },
+      "energy_dhw_month": {
+        "name": "Warmwasser Energie Monat"
+      },
+      "energy_dhw_year": {
+        "name": "Warmwasser Energie Jahr"
+      },
+      "energy_cooling_today": {
+        "name": "Kühlen Energie heute"
+      },
+      "energy_cooling_yesterday": {
+        "name": "Kühlen Energie gestern"
+      },
+      "energy_cooling_month": {
+        "name": "Kühlen Energie Monat"
+      },
+      "energy_cooling_year": {
+        "name": "Kühlen Energie Jahr"
+      },
+      "energy_electrical_today": {
+        "name": "Elektrische Energie heute"
+      },
+      "energy_electrical_yesterday": {
+        "name": "Elektrische Energie gestern"
+      },
+      "energy_electrical_month": {
+        "name": "Elektrische Energie Monat"
+      },
+      "energy_electrical_year": {
+        "name": "Elektrische Energie Jahr"
+      },
+      "heat_pump_status": {
+        "name": "Wärmepumpe Status",
+        "state": {
+          "undefined": "Undefiniert",
+          "relay_test": "Relaistest",
+          "emergency_stop": "Notaus",
+          "diagnosis": "Diagnose",
+          "manual_mode": "Handbetrieb",
+          "manual_heating": "Handbetrieb Heizen",
+          "manual_cooling": "Handbetrieb Kühlen",
+          "manual_defrost": "Manueller Abtaubetrieb",
+          "defrost": "Abtauen",
+          "second_generator": "2. Wärmeerzeuger",
+          "utility_lock": "EVU-Sperre",
+          "sg_tariff": "SG-Tarif",
+          "sg_maximum": "SG-Maximal",
+          "tariff_charging": "Tarifladung",
+          "increased_operation": "Erhöhter Betrieb",
+          "idle_time": "Standzeit",
+          "standby": "Standbybetrieb",
+          "flushing": "Spülbetrieb",
+          "frost_protection": "Frostschutz",
+          "heating": "Heizbetrieb",
+          "hot_water": "Warmwasserbetrieb",
+          "legionella_protection": "Legionellenschutz",
+          "heating_cooling_switchover": "Umschaltung Heizen/Kühlen",
+          "cooling": "Kühlbetrieb",
+          "passive_cooling": "Passive Kühlung",
+          "summer_mode": "Sommerbetrieb",
+          "swimming_pool": "Schwimmbad",
+          "vacation": "Urlaub",
+          "screed_drying": "Estrichtrocknung",
+          "blocked": "Gesperrt",
+          "lock_outdoor_temp": "Sperre Außentemperatur",
+          "lock_summer": "Sperre Sommer",
+          "lock_winter": "Sperre Winter",
+          "operating_limit": "Einsatzgrenze",
+          "heating_circuit_lock": "Heizkreissperre",
+          "readiness": "Bereitschaft",
+          "regenerative": "Regenerativ",
+          "sgr3_heating": "SG Ready 3 Heizen",
+          "sgr3_cooling": "SG Ready 3 Kühlen",
+          "sgr3_hot_water": "SG Ready 3 Warmwasser",
+          "sgr4_heating": "SG Ready 4 Heizen",
+          "sgr4_cooling": "SG Ready 4 Kühlen",
+          "sgr4_hot_water": "SG Ready 4 Warmwasser",
+          "oil_recirculation": "Ölrückführung",
+          "unknown_status": "Unbekannter Status"
+        }
+      },
+      "system_status": {
+        "name": "System Status",
+        "state": {
+          "undefined": "Undefiniert",
+          "relay_test": "Relaistest",
+          "emergency_stop": "Notaus",
+          "diagnosis": "Diagnose",
+          "manual_mode": "Handbetrieb",
+          "manual_heating": "Handbetrieb Heizen",
+          "manual_cooling": "Handbetrieb Kühlen",
+          "manual_defrost": "Manueller Abtaubetrieb",
+          "defrost": "Abtauen",
+          "second_generator": "2. Wärmeerzeuger",
+          "utility_lock": "EVU-Sperre",
+          "sg_tariff": "SG-Tarif",
+          "sg_maximum": "SG-Maximal",
+          "tariff_charging": "Tarifladung",
+          "increased_operation": "Erhöhter Betrieb",
+          "idle_time": "Standzeit",
+          "standby": "Standbybetrieb",
+          "flushing": "Spülbetrieb",
+          "frost_protection": "Frostschutz",
+          "heating": "Heizbetrieb",
+          "hot_water": "Warmwasserbetrieb",
+          "legionella_protection": "Legionellenschutz",
+          "heating_cooling_switchover": "Umschaltung Heizen/Kühlen",
+          "cooling": "Kühlbetrieb",
+          "passive_cooling": "Passive Kühlung",
+          "summer_mode": "Sommerbetrieb",
+          "swimming_pool": "Schwimmbad",
+          "vacation": "Urlaub",
+          "screed_drying": "Estrichtrocknung",
+          "blocked": "Gesperrt",
+          "lock_outdoor_temp": "Sperre Außentemperatur",
+          "lock_summer": "Sperre Sommer",
+          "lock_winter": "Sperre Winter",
+          "operating_limit": "Einsatzgrenze",
+          "heating_circuit_lock": "Heizkreissperre",
+          "readiness": "Bereitschaft",
+          "regenerative": "Regenerativ",
+          "sgr3_heating": "SG Ready 3 Heizen",
+          "sgr3_cooling": "SG Ready 3 Kühlen",
+          "sgr3_hot_water": "SG Ready 3 Warmwasser",
+          "sgr4_heating": "SG Ready 4 Heizen",
+          "sgr4_cooling": "SG Ready 4 Kühlen",
+          "sgr4_hot_water": "SG Ready 4 Warmwasser",
+          "oil_recirculation": "Ölrückführung",
+          "unknown_status": "Unbekannter Status"
+        }
+      }
+    }
+  }
+}

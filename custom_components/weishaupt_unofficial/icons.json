@@ -1,0 +1,40 @@
+{
+  "entity": {
+    "water_heater": {
+      "dhw": {
+        "default": "mdi:water-boiler",
+        "state": {
+          "heating": "mdi:water-boiler",
+          "idle": "mdi:water-boiler-off"
+        }
+      }
+    },
+    "climate": {
+      "heating_circuit": {
+        "state_attributes": {
+          "preset_mode": {
+            "default": "mdi:help-circle-outline",
+            "state": {
+              "comfort": "mdi:sofa",
+              "normal": "mdi:home-thermometer",
+              "setback": "mdi:weather-night"
+            }
+          }
+        }
+      }
+    },
+    "select": {
+      "system_mode": {
+        "default": "mdi:heat-pump"
+      }
+    },
+    "number": {
+      "dhw_push_duration": {
+        "default": "mdi:water-boiler-alert"
+      },
+      "pv_power_setpoint": {
+        "default": "mdi:solar-power"
+      }
+    }
+  }
+}
