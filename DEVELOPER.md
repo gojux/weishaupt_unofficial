@@ -338,6 +338,9 @@ useful while building and cross-checking this integration's register map:
   connection like this one. Independently arrived at the same setpoint
   sentinel handling (`1`/`-32768` = "no setpoint request"), and reported
   the yearly energy counters staying at zero on every controller tested.
+  Also the source for what `33126` (`electrical_power_input`) measures:
+  the heat pump's own electrical draw, without circulation pump and
+  controller (see its [pull request](https://github.com/Varitras/weishaupt_modbus/pull/4)).
 - [Ingmar Kaiser's blog on reading a Weishaupt heat pump via Modbus](https://www.ingmar-kaiser.de/blog/weishaupt/)
   — a Telegraf/Grafana monitoring setup; contributed the
   `ELECTRICAL_STATISTICS_REGISTERS` (`36701 ... 36704`) and helped find

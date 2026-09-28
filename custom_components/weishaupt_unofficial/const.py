@@ -484,9 +484,11 @@ SENSOR_REGISTERS: list[RegisterDef] = [
         data_type="uint16",
         unit="%",
     ),
-    # Not in the official data point list (83807301); confirmed working by
-    # the evcc project's Weishaupt charger (github.com/evcc-io/evcc,
-    # charger/weishaupt.go), disabled by default since it is undocumented.
+    # Not in the official data point list (83807301); used by the evcc
+    # project's Weishaupt charger (github.com/evcc-io/evcc,
+    # charger/weishaupt.go) and described in
+    # github.com/Varitras/weishaupt_modbus (pull request 4). Disabled by
+    # default since it is undocumented.
     RegisterDef(
         key="electrical_power_input",
         address=33126,
