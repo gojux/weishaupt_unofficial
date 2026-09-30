@@ -14,6 +14,7 @@ from pymodbus.client import AsyncModbusTcpClient
 
 from .const import (
     CONF_DEVICE_ID,
+    CONF_PV_SURPLUS_ENTITY_ID,
     CURRENT_TEMP_SOURCE_OPTIONS,
     DEFAULT_CURRENT_TEMP_SOURCE,
     DEFAULT_DEVICE_ID,
@@ -217,6 +218,31 @@ class WeishauptUnofficialOptionsFlow(config_entries.OptionsFlow):
         schema_dict: dict[Any, Any] = {
             vol.Required("general"): section(general_schema, {"collapsed": False}),
         }
+
+        # Optional source entity for WeishauptPvSurplusFollowSwitch
+        # (switch.py); same "suggested_value" pattern as the current-temp
+        # entity fields above -- see the note there on why NOT to use
+        # vol.Optional's default=.
+        current_pv_surplus_entity = self.config_entry.options.get(
+            CONF_PV_SURPLUS_ENTITY_ID
+        )
+        pv_surplus_field_kwargs: dict[str, Any] = {}
+        if current_pv_surplus_entity:
+            pv_surplus_field_kwargs["description"] = {
+                "suggested_value": current_pv_surplus_entity
+            }
+        pv_surplus_schema = vol.Schema(
+            {
+                vol.Optional(
+                    CONF_PV_SURPLUS_ENTITY_ID, **pv_surplus_field_kwargs
+                ): selector.EntitySelector(
+                    selector.EntitySelectorConfig(domain="sensor", device_class="power")
+                ),
+            }
+        )
+        schema_dict[vol.Required("pv_surplus")] = section(
+            pv_surplus_schema, {"collapsed": False}
+        )
 
         for hc in HEATING_CIRCUITS:
             source_key = current_temp_source_key(hc)

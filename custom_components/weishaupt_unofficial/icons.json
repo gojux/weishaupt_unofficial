@@ -35,6 +35,11 @@
       "pv_power_setpoint": {
         "default": "mdi:solar-power"
       }
+    },
+    "switch": {
+      "pv_surplus_follow": {
+        "default": "mdi:solar-power-variant"
+      }
     }
   }
 }

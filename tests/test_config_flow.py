@@ -5,7 +5,7 @@ from homeassistant.config_entries import SOURCE_USER
 from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResultType
 
-from custom_components.weishaupt_unofficial.const import DOMAIN
+from custom_components.weishaupt_unofficial.const import CONF_PV_SURPLUS_ENTITY_ID, DOMAIN
 
 from conftest import Simulator, entity_id, free_port
 
@@ -61,7 +61,7 @@ async def test_options_flow_switches_room_temperature_source(
 
     result = await hass.config_entries.options.async_init(integration.entry_id)
     assert result["type"] is FlowResultType.FORM
-    user_input = {"general": {"scan_interval": 30}}
+    user_input = {"general": {"scan_interval": 30}, "pv_surplus": {}}
     for number in range(1, 5):
         user_input[f"heating_circuit_{number}"] = {
             f"heating_circuit_{number}_current_temp_source": (
@@ -75,3 +75,28 @@ async def test_options_flow_switches_room_temperature_source(
     await hass.async_block_till_done()
 
     assert hass.states.get(climate).attributes["current_temperature"] == 20.8
+
+
+async def test_options_flow_sets_pv_surplus_source_entity(
+    hass: HomeAssistant, integration
+) -> None:
+    hass.states.async_set(
+        "sensor.pv_surplus", "500", {"unit_of_measurement": "W", "device_class": "power"}
+    )
+
+    result = await hass.config_entries.options.async_init(integration.entry_id)
+    user_input = {
+        "general": {"scan_interval": 30},
+        "pv_surplus": {CONF_PV_SURPLUS_ENTITY_ID: "sensor.pv_surplus"},
+    }
+    for number in range(1, 5):
+        user_input[f"heating_circuit_{number}"] = {}
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], user_input
+    )
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    await hass.async_block_till_done()
+
+    assert integration.options[CONF_PV_SURPLUS_ENTITY_ID] == "sensor.pv_surplus"
+    # The "Follow PV surplus" switch is only created once a source is set.
+    assert entity_id(hass, "switch", integration, "pv_surplus_follow")

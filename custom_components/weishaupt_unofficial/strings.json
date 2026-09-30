@@ -69,6 +69,12 @@
               "heating_circuit_4_current_temp_source": "Heating circuit 4: room temperature source",
               "heating_circuit_4_current_temp_entity_id": "Room temperature entity (when \"Use a Home Assistant entity\" is selected)"
             }
+          },
+          "pv_surplus": {
+            "name": "PV surplus",
+            "data": {
+              "pv_surplus_entity_id": "PV surplus power entity (used by the \"Follow PV surplus\" switch)"
+            }
           }
         }
       }
@@ -118,6 +124,11 @@
           "standby": "Standby",
           "second_generator": "Second heat generator"
         }
+      }
+    },
+    "switch": {
+      "pv_surplus_follow": {
+        "name": "Follow PV surplus"
       }
     },
     "number": {

@@ -11,7 +11,7 @@ from homeassistant.helpers import entity_registry as er
 from homeassistant.util import dt as dt_util
 from pytest_homeassistant_custom_component.common import async_fire_time_changed
 
-from custom_components.weishaupt_unofficial.const import DOMAIN
+from custom_components.weishaupt_unofficial.const import CONF_PV_SURPLUS_ENTITY_ID, DOMAIN
 from custom_components.weishaupt_unofficial.number import PV_SETPOINT_HEARTBEAT_INTERVAL
 
 from conftest import Simulator, entity_id
@@ -134,6 +134,95 @@ async def test_pv_setpoint_heartbeat_stays_silent_once_deactivated(
         )
         await hass.async_block_till_done()
         assert write.call_count == 0
+
+
+async def test_pv_surplus_follow_switch_not_created_without_a_source(
+    hass: HomeAssistant, integration
+) -> None:
+    registry = er.async_get(hass)
+    assert (
+        registry.async_get_entity_id(
+            "switch", DOMAIN, f"{integration.entry_id}_pv_surplus_follow"
+        )
+        is None
+    )
+
+
+async def test_pv_surplus_follow_switch(
+    hass: HomeAssistant, make_integration, simulator: Simulator
+) -> None:
+    """While the switch is on, the PV power setpoint follows the
+    configured source entity (converting its unit to watts) and can't be
+    set directly; turning the switch off hands control back."""
+    hass.states.async_set(
+        "sensor.pv_surplus",
+        "1.5",
+        {"unit_of_measurement": "kW", "device_class": "power"},
+    )
+    entry = await make_integration(
+        options={CONF_PV_SURPLUS_ENTITY_ID: "sensor.pv_surplus"}
+    )
+    follow = entity_id(hass, "switch", entry, "pv_surplus_follow")
+    pv_setpoint = entity_id(hass, "number", entry, "pv_power_setpoint")
+
+    await call(hass, "switch", "turn_on", entity_id=follow)
+    assert hass.states.get(follow).state == "on"
+    assert await simulator.read(40002) == 1500  # 1.5 kW -> 1500 W
+
+    state = hass.states.get(pv_setpoint)
+    assert state.state == "1500"
+    assert state.attributes["min"] == 1500
+    assert state.attributes["max"] == 1500
+    with pytest.raises(ServiceValidationError):
+        await call(hass, "number", "set_value", entity_id=pv_setpoint, value=999)
+
+    # A later change of the source is written through immediately.
+    hass.states.async_set(
+        "sensor.pv_surplus",
+        "2.2",
+        {"unit_of_measurement": "kW", "device_class": "power"},
+    )
+    await hass.async_block_till_done()
+    assert await simulator.read(40002) == 2200
+
+    await call(hass, "switch", "turn_off", entity_id=follow)
+    assert hass.states.get(follow).state == "off"
+    assert await simulator.read(40002) == 0
+
+    # The number entity is settable again, with its normal range restored.
+    assert hass.states.get(pv_setpoint).attributes["max"] == 65535
+    await call(hass, "number", "set_value", entity_id=pv_setpoint, value=321)
+    assert await simulator.read(40002) == 321
+
+
+async def test_pv_surplus_follow_switch_handles_bad_source_values(
+    hass: HomeAssistant, make_integration, simulator: Simulator
+) -> None:
+    """A negative source value is clamped to 0 (a valid reading, e.g.
+    currently importing); an unavailable source is skipped so the last
+    written value stays active instead of being replaced."""
+    hass.states.async_set(
+        "sensor.pv_surplus", "500", {"unit_of_measurement": "W", "device_class": "power"}
+    )
+    entry = await make_integration(
+        options={CONF_PV_SURPLUS_ENTITY_ID: "sensor.pv_surplus"}
+    )
+    follow = entity_id(hass, "switch", entry, "pv_surplus_follow")
+    await call(hass, "switch", "turn_on", entity_id=follow)
+    assert await simulator.read(40002) == 500
+
+    hass.states.async_set(
+        "sensor.pv_surplus", "-300", {"unit_of_measurement": "W", "device_class": "power"}
+    )
+    await hass.async_block_till_done()
+    assert await simulator.read(40002) == 0
+
+    # Something the integration itself would never write, to prove the
+    # unavailable state below is genuinely skipped rather than overwritten.
+    await simulator.write(40002, 777)
+    hass.states.async_set("sensor.pv_surplus", "unavailable")
+    await hass.async_block_till_done()
+    assert await simulator.read(40002) == 777
 
 
 async def test_climate_modes_and_presets(

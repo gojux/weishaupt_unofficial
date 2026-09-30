@@ -69,6 +69,12 @@
               "heating_circuit_4_current_temp_source": "Heizkreis 4: Quelle Raumtemperatur",
               "heating_circuit_4_current_temp_entity_id": "Raumtemperatur-Entity (wenn \"Home-Assistant-Entity verwenden\" ausgewählt)"
             }
+          },
+          "pv_surplus": {
+            "name": "PV-Überschuss",
+            "data": {
+              "pv_surplus_entity_id": "PV-Überschuss-Leistungsentität (für den Schalter \"PV-Überschuss folgen\")"
+            }
           }
         }
       }
@@ -118,6 +124,11 @@
           "standby": "Standby",
           "second_generator": "2. Wärmeerzeuger"
         }
+      }
+    },
+    "switch": {
+      "pv_surplus_follow": {
+        "name": "PV-Überschuss folgen"
       }
     },
     "number": {

@@ -105,6 +105,17 @@ class WeishauptModbusCoordinator(DataUpdateCoordinator[dict[str, float]]):
         # requested after a write may be delayed, so this is the newest
         # known device value until the next poll.
         self._written: dict[str, int] = {}
+        # Runtime state shared between WeishauptPvPowerSetpointNumber
+        # (number.py) and WeishauptPvSurplusFollowSwitch (switch.py), which
+        # have no direct reference to each other. `pv_setpoint_last_value`
+        # is the value the number entity's heartbeat keeps re-sending,
+        # updated synchronously by whichever of the two last wrote it, so
+        # there is no race between the switch writing 0 on "off" and the
+        # heartbeat resending a stale value. `pv_surplus_follow_enabled`
+        # tells the number entity to reject direct writes and collapse its
+        # range while the switch is on.
+        self.pv_setpoint_last_value: float | None = None
+        self.pv_surplus_follow_enabled: bool = False
 
     async def _ensure_connected(self) -> None:
         if not self.client.connected:

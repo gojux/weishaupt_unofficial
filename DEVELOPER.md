@@ -156,6 +156,42 @@ automation to keep calling `number.set_value` just to keep a setpoint
 alive. An automation is still needed to *change* the setpoint when the
 actual available power changes.
 
+## Following an external PV-surplus entity (`switch.py`)
+
+Instead of an automation, the PV power setpoint can optionally be kept in
+sync with an existing Home Assistant entity (e.g. a smart meter's PV
+surplus sensor) automatically: `WeishauptPvSurplusFollowSwitch`
+(`switch.py`) is only created when a source entity is configured
+(`CONF_PV_SURPLUS_ENTITY_ID`, set in the options flow's `pv_surplus`
+section). While on, it tracks the source entity with
+`async_track_state_change_event()` -- the same mechanism
+`WeishauptRoomClimate` uses for its `entity`-sourced room temperature
+(`climate.py`) -- converts its value to watts via
+`homeassistant.util.unit_conversion.PowerConverter` (so kW/MW sources work
+without extra configuration) and writes it to
+`SYSTEM_PV_SETPOINT_REGISTER`. A value the switch can't use right now
+(`unknown`/`unavailable`/non-numeric) is skipped rather than written as
+`0`, so a momentary gap in the source doesn't interrupt the setpoint --
+the number entity's heartbeat (see above) keeps re-sending the last usable
+value regardless. A negative value (e.g. currently importing) is clamped
+to `0` and written, since it's a valid reading rather than a missing one.
+
+**The switch and the number entity have no reference to each other**, but
+share two plain attributes on the coordinator they both already hold a
+reference to (`pv_setpoint_last_value`, `pv_surplus_follow_enabled` --
+see `WeishauptModbusCoordinator.__init__`). Both entities update
+`pv_setpoint_last_value` *before* writing, whichever of them writes last,
+so there's no race between the switch writing `0` on "off" and the
+heartbeat resending a now-stale value in between.
+
+**While `pv_surplus_follow_enabled` is set, `WeishauptPvPowerSetpointNumber`
+rejects direct writes and collapses `native_min_value`/`native_max_value`
+to its current value** -- the exact pattern `WeishauptRoomClimate.min_temp`/
+`max_temp` uses for a setpoint that currently can't be changed directly
+(see "Room heating circuits" below): the range collapses instead of hiding
+the number's value or feature, and `async_set_native_value()` still raises
+`ServiceValidationError` as a backstop for a direct service call.
+
 ## A note on entity naming and `translation_key`
 
 If both `_attr_name` and `_attr_translation_key` are set on an entity, HA

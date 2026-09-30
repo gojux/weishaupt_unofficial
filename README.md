@@ -119,6 +119,14 @@ entry's three-dot menu → **Reconfigure**.
   as long as it isn't `0`, so it stays active without any extra
   automation. An automation is only needed to change it when the actual
   available power changes. Mind the response time of the heating system.
+- **Follow PV surplus** — optionally pick a Home Assistant entity that
+  reports your PV surplus power (e.g. from a smart meter) under the
+  entry's three-dot menu → **Configure**. A **Follow PV surplus** switch
+  then appears; while it's on, the PV power setpoint above is set
+  automatically from that entity (converting kW/MW to W as needed) and
+  becomes read-only. Turning the switch off sets the setpoint back to `0`.
+  Turn the switch off before clearing the configured entity, otherwise the
+  setpoint has no way left to be reset to `0`.
 - **Room heating circuits 1–4** — `climate` entities. Only heating circuit
   1 is enabled by default; enable further circuits and less common sensors
   under **Settings → Devices & Services → this integration → Entities**.

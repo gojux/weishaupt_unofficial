@@ -15,6 +15,8 @@ from homeassistant.components.climate import HVACMode, PRESET_COMFORT
 DOMAIN = "weishaupt_unofficial"
 
 CONF_DEVICE_ID = "device_id"
+# Options-flow key for the optional PV-surplus source entity (see switch.py).
+CONF_PV_SURPLUS_ENTITY_ID = "pv_surplus_entity_id"
 
 DEFAULT_NAME = "Heat Pump"
 DEFAULT_PORT = 502

@@ -4,7 +4,8 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import socket
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Callable
+from typing import Any
 
 import pytest
 from homeassistant.core import HomeAssistant
@@ -98,6 +99,41 @@ async def integration(
     await hass.async_block_till_done()
     yield config_entry
     await hass.config_entries.async_unload(config_entry.entry_id)
+    await hass.async_block_till_done()
+
+
+@pytest.fixture
+async def make_integration(
+    hass: HomeAssistant, simulator: Simulator
+) -> AsyncGenerator[Callable[..., Any]]:
+    """Factory for a config entry with custom options (e.g. an optional
+    source entity), for tests that can't use the plain `integration`
+    fixture. Every entry created through it is unloaded at the end of the
+    test."""
+    entries: list[MockConfigEntry] = []
+
+    async def _make(options: dict | None = None) -> MockConfigEntry:
+        entry = MockConfigEntry(
+            domain=DOMAIN,
+            title="Heat Pump",
+            data={
+                "name": "Heat Pump",
+                "host": "127.0.0.1",
+                "port": simulator.port,
+                "device_id": 1,
+            },
+            options=options or {},
+        )
+        entry.add_to_hass(hass)
+        assert await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+        entries.append(entry)
+        return entry
+
+    yield _make
+
+    for entry in entries:
+        await hass.config_entries.async_unload(entry.entry_id)
     await hass.async_block_till_done()
 
 
