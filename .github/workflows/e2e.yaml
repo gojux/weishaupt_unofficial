@@ -1,0 +1,20 @@
+name: End-to-end test
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run end-to-end test against a fresh Home Assistant
+        run: docker compose --profile e2e run --rm e2e
+      - name: Show Home Assistant log on failure
+        if: failure()
+        run: docker compose logs homeassistant
+      - name: Stop and remove the stack
+        if: always()
+        run: docker compose --profile e2e down -v

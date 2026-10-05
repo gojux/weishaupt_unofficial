@@ -353,6 +353,22 @@ docker compose down -v               # stop and discard the HA configuration
   `tests/test_entities.py` and `tests/test_config_flow.py` the entities and
   flows against the simulator.
 
+### End-to-end test
+
+`docker compose --profile e2e run --rm e2e` starts a fresh Home Assistant
+2026.9.3 and the Modbus simulator, then runs `tests/e2e/` against them
+through Home Assistant's REST API: it sets up the integration through the
+config flow, checks the simulator values, writes the PV setpoint, and
+configures and toggles the PV-surplus switch. The same run executes in
+GitHub Actions (`.github/workflows/e2e.yaml`).
+
+The test uses only synthetic data. The owner account is created per run
+with a random password and exists only in that run's Home Assistant
+instance. The device title, the simulator host (its compose service name)
+and the PV source entity are invented. Do not add real addresses, serial
+numbers, names or other details of a real installation to the repository,
+its test data or its logs.
+
 **Custom translation caching (custom integrations only):** if you change
 `strings.json`/`translations/*.json` and the UI still shows the old text
 after a reload, do a **full Home Assistant restart** and a hard browser

@@ -1,15 +1,16 @@
 # Development environment: Home Assistant 2026.9.3 with the integration
 # mounted, talking to a simulated heat pump.
 #
-#   docker compose up            Home Assistant on http://localhost:8123,
+#   docker compose up            Home Assistant on http://localhost:${HA_HOST_PORT:-8123},
 #                                add the integration with host "modbus-simulator", port 502
 #   docker compose run --rm tests   run the test suite
+#   docker compose --profile e2e run --rm e2e   end-to-end test against a fresh HA
 #   docker compose down -v       also discards the Home Assistant configuration
 services:
   homeassistant:
     image: ghcr.io/home-assistant/home-assistant:2026.9.3
     ports:
-      - "8123:8123"
+      - "${HA_HOST_PORT:-8123}:8123"
     volumes:
       - config:/config
       - ./dev/configuration.yaml:/config/configuration.yaml:ro
@@ -31,6 +32,21 @@ services:
       - .:/app
     profiles:
       - test
+
+  e2e:
+    build:
+      context: .
+      dockerfile: tests/Dockerfile
+    command: ["tests/e2e", "--noconftest", "-p", "no:homeassistant", "-p", "no:socket", "-v"]
+    environment:
+      HA_URL: http://homeassistant:8123
+    volumes:
+      - .:/app
+    depends_on:
+      - homeassistant
+      - modbus-simulator
+    profiles:
+      - e2e
 
 volumes:
   config:
