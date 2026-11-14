@@ -1,14 +1,20 @@
-# Development environment: Home Assistant 2026.9.3 with the integration
-# mounted, talking to a simulated heat pump.
+# Development environment: Home Assistant with the integration mounted,
+# talking to a simulated heat pump.
 #
 #   docker compose up            Home Assistant on http://localhost:${HA_HOST_PORT:-8123},
 #                                add the integration with host "modbus-simulator", port 502
 #   docker compose run --rm tests   run the test suite
 #   docker compose --profile e2e run --rm e2e   end-to-end test against a fresh HA
 #   docker compose down -v       also discards the Home Assistant configuration
+#
+# Versions (environment variables):
+#   HA_VERSION          Home Assistant for `up` and the e2e test (default: 2026.11.1)
+#   TEST_HA_VERSION     Home Assistant for the test suite (default: 2026.10.1, the minimum)
+#   TEST_PHACC_VERSION  pytest-homeassistant-custom-component matching TEST_HA_VERSION
+#                       (default: 0.13.372)
 services:
   homeassistant:
-    image: ghcr.io/home-assistant/home-assistant:2026.9.3
+    image: ghcr.io/home-assistant/home-assistant:${HA_VERSION:-2026.11.1}
     ports:
       - "${HA_HOST_PORT:-8123}:8123"
     volumes:
@@ -19,7 +25,7 @@ services:
       - modbus-simulator
 
   modbus-simulator:
-    image: ghcr.io/home-assistant/home-assistant:2026.9.3
+    image: ghcr.io/home-assistant/home-assistant:${HA_VERSION:-2026.11.1}
     entrypoint: ["python", "/app/modbus_simulator.py"]
     volumes:
       - ./tests/modbus_simulator.py:/app/modbus_simulator.py:ro
@@ -28,6 +34,9 @@ services:
     build:
       context: .
       dockerfile: tests/Dockerfile
+      args:
+        HA_VERSION: ${TEST_HA_VERSION:-2026.10.1}
+        PHACC_VERSION: ${TEST_PHACC_VERSION:-0.13.372}
     volumes:
       - .:/app
     profiles:

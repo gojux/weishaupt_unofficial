@@ -34,6 +34,8 @@ For architecture details and implementation notes, see
 
 ## Requirements
 
+Home Assistant **2026.10.1** or newer.
+
 This integration requires `pymodbus` version `3.11.0` or newer, which Home
 Assistant installs automatically.
 

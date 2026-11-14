@@ -331,13 +331,35 @@ normal setpoint (`42103`), the lowered setpoint (`42104`), a push duration
 
 ## Tests and development environment
 
-Everything runs in docker compose, on Home Assistant 2026.9.3:
+Everything runs in docker compose:
 
 ```bash
 docker compose run --rm tests        # test suite
 docker compose up                    # Home Assistant on http://localhost:8123
 docker compose down -v               # stop and discard the HA configuration
 ```
+
+The minimum supported Home Assistant version is 2026.10.1 (`hacs.json`).
+The Home Assistant versions are set through environment variables (see
+the header of `docker-compose.yml`):
+
+| Variable | Used by | Default |
+|---|---|---|
+| `TEST_HA_VERSION` | test suite | `2026.10.1` (the minimum) |
+| `TEST_PHACC_VERSION` | test suite | `0.13.372` (matches 2026.10.1) |
+| `HA_VERSION` | `docker compose up`, end-to-end test | `2026.11.1` |
+
+```bash
+TEST_HA_VERSION=2026.10.4 TEST_PHACC_VERSION=0.13.375 docker compose run --build --rm tests
+HA_VERSION=2026.10.1 docker compose --profile e2e run --rm e2e
+```
+
+GitHub Actions runs the test suite on the minimum version and on the newest
+version `pytest-homeassistant-custom-component` is available for
+(`.github/workflows/tests.yaml`), and the end-to-end test on the minimum and
+the newest release (`.github/workflows/e2e.yaml`). Each
+`pytest-homeassistant-custom-component` release pins exactly one Home
+Assistant version, so the two variables of the test suite must match.
 
 - `tests/modbus_simulator.py` simulates a heat pump. It lists the register
   values with the addresses from the data point list — deliberately not
@@ -346,8 +368,6 @@ docker compose down -v               # stop and discard the HA configuration
   circuits 3 and 4 are not installed in it. `docker compose up` starts it
   as the `modbus-simulator` service: add the integration with host
   `modbus-simulator` and port 502.
-- The tests use `pytest-homeassistant-custom-component`; the version in
-  `tests/Dockerfile` must match the Home Assistant version.
 - `tests/test_const.py` checks the register map and the translations,
   `tests/test_coordinator.py` reading and writing,
   `tests/test_entities.py` and `tests/test_config_flow.py` the entities and
@@ -356,11 +376,12 @@ docker compose down -v               # stop and discard the HA configuration
 ### End-to-end test
 
 `docker compose --profile e2e run --rm e2e` starts a fresh Home Assistant
-2026.9.3 and the Modbus simulator, then runs `tests/e2e/` against them
+(`HA_VERSION`) and the Modbus simulator, then runs `tests/e2e/` against them
 through Home Assistant's REST API: it sets up the integration through the
 config flow, checks the simulator values, writes the PV setpoint, and
 configures and toggles the PV-surplus switch. The same run executes in
-GitHub Actions (`.github/workflows/e2e.yaml`).
+GitHub Actions (`.github/workflows/e2e.yaml`) against each Home Assistant
+version of its matrix.
 
 The test uses only synthetic data. The owner account is created per run
 with a random password and exists only in that run's Home Assistant

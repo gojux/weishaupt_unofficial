@@ -8,6 +8,14 @@ on:
 jobs:
   e2e:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # The minimum supported version (hacs.json) and the newest release.
+        ha_version: ["2026.10.1", "2026.11.1"]
+    name: e2e (Home Assistant ${{ matrix.ha_version }})
+    env:
+      HA_VERSION: ${{ matrix.ha_version }}
     steps:
       - uses: actions/checkout@v4
       - name: Run end-to-end test against a fresh Home Assistant

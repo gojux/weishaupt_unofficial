@@ -1,0 +1,29 @@
+name: Tests
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # The minimum supported version (hacs.json) and the newest release
+        # pytest-homeassistant-custom-component is available for. Each plugin
+        # release pins exactly one Home Assistant version.
+        include:
+          - ha_version: "2026.10.1"
+            phacc_version: "0.13.372"
+          - ha_version: "2026.10.4"
+            phacc_version: "0.13.375"
+    name: tests (Home Assistant ${{ matrix.ha_version }})
+    env:
+      TEST_HA_VERSION: ${{ matrix.ha_version }}
+      TEST_PHACC_VERSION: ${{ matrix.phacc_version }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run the test suite
+        run: docker compose run --rm tests

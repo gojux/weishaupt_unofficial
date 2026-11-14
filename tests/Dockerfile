@@ -1,7 +1,12 @@
-FROM ghcr.io/home-assistant/home-assistant:2026.9.3
+# Home Assistant version the tests run against, and the matching
+# pytest-homeassistant-custom-component release (each plugin release pins
+# exactly one Home Assistant version). Defaults to the integration's
+# minimum supported version (hacs.json).
+ARG HA_VERSION=2026.10.1
+FROM ghcr.io/home-assistant/home-assistant:${HA_VERSION}
 
-# The plugin version tracks the Home Assistant release it is built for.
-RUN pip install --no-cache-dir pytest-homeassistant-custom-component==0.13.366
+ARG PHACC_VERSION=0.13.372
+RUN pip install --no-cache-dir pytest-homeassistant-custom-component==${PHACC_VERSION}
 
 WORKDIR /app
 ENV PYTHONDONTWRITEBYTECODE=1
