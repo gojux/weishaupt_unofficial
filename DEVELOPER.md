@@ -546,9 +546,8 @@ useful while building and cross-checking this integration's register map:
   register.
 - [Varitras/weishaupt_modbus](https://github.com/Varitras/weishaupt_modbus)
   (a fork of [OStrama/weishaupt_modbus](https://github.com/OStrama/weishaupt_modbus))
-  — another Home Assistant integration for the same heat pumps, built on
-  Home Assistant's own `modbus` integration rather than a dedicated
-  connection like this one. Independently arrived at the same setpoint
+  — another Home Assistant integration for the same heat pumps.
+  Independently arrived at the same setpoint
   sentinel handling (`1`/`-32768` = "no setpoint request"), and reported
   the yearly energy counters staying at zero on every controller tested.
   Also the source of the heating curve register (`41x08`) and of what
