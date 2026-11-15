@@ -34,6 +34,7 @@ map is based on is in [docs/83807301.pdf](docs/83807301.pdf).
 - `select.py` – the system operating mode
 - `water_heater.py` – domestic hot water
 - `climate.py` – up to 4 room heating circuits
+- `diagnostics.py` – diagnostics download (see "Diagnostics download")
 
 ## The register map (`const.py`)
 
@@ -232,6 +233,31 @@ The counters (`coordinator.counters`, `connection_losses`,
 `failed_polls_total`) and the last poll's `readings` (raw word, decoded
 value, outcome per register) are kept on the coordinator for the
 diagnostics download as well.
+
+## Diagnostics download
+
+`diagnostics.py` (`async_get_config_entry_diagnostics`) returns:
+
+- `versions` -- Home Assistant, the integration, `modbus-connection`,
+  `tmodbus`;
+- `entry` -- data and options with `TO_REDACT` removed: host, name and the
+  chosen source entities (PV surplus, room temperature per circuit), since
+  entity ids often contain room or device names;
+- `connection` -- whether the link is up, connection drops and the request
+  counters (`RequestCounters`);
+- `polling` -- interval, last success, failed polls in a row and in total,
+  registers read via function code 0x04 (`input_fallback_addresses`) and
+  registers rejected in a row;
+- `status` -- current heat pump / system status code and seconds in it;
+- `writes` -- values written since the last poll, PV setpoint state;
+- `registers` -- every register of the map by address with the last
+  poll's raw word, decoded value, published value, outcome and the meaning
+  of a filtered status word; registers of disabled entities show as
+  `not polled`.
+
+`tests/test_diagnostics.py` checks that host, title and chosen entity ids
+appear nowhere in the serialized download. Add any new free-text option
+to `TO_REDACT`.
 
 ## Writing and the controller's EEPROM
 

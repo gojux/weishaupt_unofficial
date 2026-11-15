@@ -7,12 +7,13 @@ import logging
 import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from datetime import timedelta
+from datetime import datetime, timedelta
 from functools import partial
 from typing import TypeVar
 
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
+from homeassistant.util import dt as dt_util
 
 from modbus_connection import (
     ClientClosedError,
@@ -262,6 +263,8 @@ class WeishauptModbusCoordinator(DataUpdateCoordinator[dict[str, float]]):
         self.failed_polls_total = 0
         # What the last poll got per register key (raw value and outcome).
         self.readings: dict[str, RegisterReading] = {}
+        # When the last poll succeeded (UTC).
+        self.last_successful_poll: datetime | None = None
         # Whether debug logging was on at the last poll: the raw values are
         # logged once each time it gets switched on (and after setup).
         self._debug_was_enabled = False
@@ -280,6 +283,33 @@ class WeishauptModbusCoordinator(DataUpdateCoordinator[dict[str, float]]):
         # range while the switch is on.
         self.pv_setpoint_last_value: float | None = None
         self.pv_surplus_follow_enabled: bool = False
+
+    @property
+    def failed_polls_in_a_row(self) -> int:
+        """Failed polls in a row since the last good one."""
+        return self._failed_polls
+
+    @property
+    def input_fallback_addresses(self) -> list[int]:
+        """Holding registers that only answer as input registers."""
+        return sorted(self._input_fallback)
+
+    @property
+    def consecutive_failures(self) -> dict[str, int]:
+        """Registers rejected in the last polls, with the count in a row."""
+        return dict(self._consecutive_failures)
+
+    @property
+    def pending_writes(self) -> dict[str, int]:
+        """Raw values written since the register was last polled."""
+        return dict(self._written)
+
+    def status_durations(self) -> dict[str, tuple[int | None, float]]:
+        """Status register key -> (current code, seconds in that status)."""
+        now = time.monotonic()
+        return {
+            key: (code, now - since) for key, (code, since) in self._status_since.items()
+        }
 
     @callback
     def handle_connection_lost(self) -> None:
@@ -414,6 +444,7 @@ class WeishauptModbusCoordinator(DataUpdateCoordinator[dict[str, float]]):
             raise
         self._failed_polls = 0
         self.readings = readings
+        self.last_successful_poll = dt_util.utcnow()
         self._log_poll(time.monotonic() - started, self.counters - counters_before, readings)
         self._log_status_changes(data)
         return data

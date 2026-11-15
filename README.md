@@ -235,6 +235,13 @@ and that Modbus TCP is enabled on the system device and reachable from
 your Home Assistant instance (same network / no firewall blocking the
 port).
 
+**Diagnostics.** In the entry's three-dot menu choose **Download
+diagnostics**. The file shows what the controller answered: every
+register's raw value and how the integration interpreted it, request and
+connection statistics, the current status and the integration's settings.
+It leaves out the IP address, the name you gave the heat pump and the
+entities you chose as sources, so it can be attached to an issue.
+
 **Debug log.** On the integration's page choose **Enable debug logging**,
 reproduce the problem, then **Disable debug logging** to download the log.
 It includes the integration's own messages -- a summary of every poll,
