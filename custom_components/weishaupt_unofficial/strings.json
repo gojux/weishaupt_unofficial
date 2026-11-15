@@ -216,6 +216,9 @@
       "hc_flow_temp": {
         "name": "Heating circuit {circuit} flow temperature"
       },
+      "hc_heating_curve": {
+        "name": "Heating circuit {circuit} heating curve"
+      },
       "second_generator_operating_hours": {
         "name": "Second heat generator operating hours"
       },

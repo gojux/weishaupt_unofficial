@@ -358,6 +358,7 @@ class HeatingCircuit:
     comfort_reg: RegisterDef
     normal_reg: RegisterDef
     setback_reg: RegisterDef
+    heating_curve_reg: RegisterDef
     enabled_default: bool = True
 
     def setpoint_reg_for_preset(self, preset: str) -> RegisterDef:
@@ -448,6 +449,23 @@ def _heating_circuit(number: int) -> HeatingCircuit:
         ),
         setback_reg=_room_setpoint(
             f"{prefix}_setback_setpoint", write_base + 7, SETBACK_SETPOINT_RANGE, number
+        ),
+        # Not in the official data point list (83807301); listed by
+        # github.com/Varitras/weishaupt_modbus ("Heizkennlinie") and read
+        # successfully on a BIBLOCK. Read only: its limits are undocumented
+        # and the controller stores it in its EEPROM. The valid range is a
+        # plausibility bound (slope 0.01 ... 10.00), not a documented one.
+        heating_curve_reg=RegisterDef(
+            key=f"{prefix}_heating_curve",
+            address=write_base + 8,
+            register_type="holding",
+            scale=0.01,
+            precision=2,
+            valid_range=(1, 1000),
+            enabled_default=False,
+            entity_category=EntityCategory.DIAGNOSTIC,
+            circuit=number,
+            translation_key="hc_heating_curve",
         ),
         enabled_default=enabled,
     )
@@ -580,7 +598,9 @@ SENSOR_REGISTERS: list[RegisterDef] = [
     *(
         reg
         for hc in HEATING_CIRCUITS
-        for reg in (hc.room_temp_reg, hc.flow_target_reg, hc.flow_temp_reg)
+        for reg in (
+            hc.room_temp_reg, hc.flow_target_reg, hc.flow_temp_reg, hc.heating_curve_reg
+        )
     ),
     _operating_hours("second_generator_operating_hours", 34102),
     _operating_hours("e_heater_1_operating_hours", 34106),

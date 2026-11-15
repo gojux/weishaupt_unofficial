@@ -216,6 +216,9 @@
       "hc_flow_temp": {
         "name": "Heizkreis {circuit} Vorlauftemperatur"
       },
+      "hc_heating_curve": {
+        "name": "Heizkreis {circuit} Heizkurve"
+      },
       "second_generator_operating_hours": {
         "name": "Betriebsstunden 2. Wärmeerzeuger"
       },

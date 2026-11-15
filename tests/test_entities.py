@@ -332,6 +332,7 @@ async def test_entity_categories_and_defaults(hass: HomeAssistant, integration) 
         ("sensor", "second_generator_operating_hours"),
         ("sensor", "e_heater_1_operating_hours"),
         ("sensor", "e_heater_2_operating_hours"),
+        ("sensor", "hc1_heating_curve"),
         ("binary_sensor", "fault"),
         ("binary_sensor", "second_generator_active"),
         ("binary_sensor", "e_heater_1_active"),
@@ -353,6 +354,7 @@ async def test_entity_categories_and_defaults(hass: HomeAssistant, integration) 
     for key in [
         "buffer_temp",
         "hc1_room_temp",
+        "hc1_heating_curve",
         "energy_total_yesterday",
         "energy_heating_yesterday",
         "energy_dhw_yesterday",

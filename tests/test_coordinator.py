@@ -197,6 +197,9 @@ async def test_first_refresh_reads_valid_values_only(
     assert data["hc1_mode"] == 2
     assert data["energy_total_year"] == 3900
     assert data["heat_pump_status"] == 19
+    assert data["hc1_heating_curve"] == 0.75
+    # implausible heating curve
+    assert "hc2_heating_curve" not in data
     # sensor not installed / no value / no code active
     assert "outdoor_temp_2" not in data
     assert "hc2_room_target_temp" not in data

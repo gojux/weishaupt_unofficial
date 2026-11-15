@@ -109,16 +109,16 @@ entry's three-dot menu → **Reconfigure**.
 - **Diagnostic entities** (shown under *Diagnostic* on the device page) —
   the **Fault** binary sensor, error, warning and fault-free codes, the
   system status, the second heat generator and electric heaters (status and
-  operating hours) and less common temperatures (air intake, hydraulic
-  separator, regenerative, total flow). Most of them are disabled by
-  default.
+  operating hours), the heating curve of each heating circuit (read only)
+  and less common temperatures (air intake, hydraulic separator,
+  regenerative, total flow). Most of them are disabled by default.
 - **Disabled by default** — buffer temperature and the heating circuits'
   room temperature (not every installation has these sensors; a heating
   circuit can still show its room temperature, see below), and an
-  **electrical power input** sensor. Electrical power input and electrical
-  energy aren't in the official data point list this integration is
-  otherwise based on, see [DEVELOPER.md](DEVELOPER.md) for where they come
-  from.
+  **electrical power input** sensor. Electrical power input, electrical
+  energy and the heating curve aren't in the official data point list this
+  integration is otherwise based on, see [DEVELOPER.md](DEVELOPER.md) for
+  where they come from.
 - **Domestic hot water (DHW)** — a `water_heater` entity, plus number
   entities for a one-off DHW charge ("push") and the lowered setpoint
   (listed under *Configuration*).

@@ -91,7 +91,12 @@ RegisterDef(
   disabled by default since it is undocumented and not served by every
   controller. The electrical energy statistics count on the controllers
   seen so far, including the yearly total, and are enabled by default
-  (except "yesterday", like the other statistics). `fault_free_code`
+  (except "yesterday", like the other statistics). The heating curve
+  (`41x08`, `hcN_heating_curve`, slope x 0.01) is listed by
+  Varitras/weishaupt_modbus and was read successfully on a BIBLOCK; it is
+  read only (its limits are undocumented and the controller stores it in
+  its EEPROM), diagnostic and disabled by default, and values outside
+  0.01 ... 10.00 are treated as implausible. `fault_free_code`
   (`30005`), by contrast, *is* in the official list (section 3.2,
   "Fehlerfrei", same `FormatFehlermeldung` as `error_code`/`warning_code`)
   -- it was simply missed when this register map was first built from the
@@ -546,7 +551,8 @@ useful while building and cross-checking this integration's register map:
   connection like this one. Independently arrived at the same setpoint
   sentinel handling (`1`/`-32768` = "no setpoint request"), and reported
   the yearly energy counters staying at zero on every controller tested.
-  Also the source for what `33126` (`electrical_power_input`) measures:
+  Also the source of the heating curve register (`41x08`) and of what
+  `33126` (`electrical_power_input`) measures:
   the heat pump's own electrical draw, without circulation pump and
   controller (see its [pull request](https://github.com/Varitras/weishaupt_modbus/pull/4)).
 - [Ingmar Kaiser's blog on reading a Weishaupt heat pump via Modbus](https://www.ingmar-kaiser.de/blog/weishaupt/)
