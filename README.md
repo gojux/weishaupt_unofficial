@@ -237,8 +237,13 @@ port).
 
 **Debug log.** On the integration's page choose **Enable debug logging**,
 reproduce the problem, then **Disable debug logging** to download the log.
-It includes the integration's own messages and those of the Modbus
-libraries (`modbus_connection`, `tmodbus`). The library loggers are shared
+It includes the integration's own messages -- a summary of every poll,
+the raw value of every register (once when debug logging is switched on),
+status changes with their duration, retries, connection drops and writes
+-- and those of the Modbus libraries (`modbus_connection`, `tmodbus`). The
+integration's own lines contain no IP address or device name; the library
+lines may name the address, so check before posting a log publicly. The
+library loggers are shared
 by every integration using Modbus, so a library warning (e.g. "Received
 unexpected response with Transaction ID ...") may come from another
 integration.

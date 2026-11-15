@@ -2,13 +2,16 @@
 from __future__ import annotations
 
 import asyncio
+import dataclasses
 import logging
+import time
 from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
 from datetime import timedelta
 from functools import partial
 from typing import TypeVar
 
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from modbus_connection import (
@@ -25,10 +28,13 @@ from . import const
 from .const import (
     ALL_REGISTERS,
     CONSECUTIVE_FAILURES_BEFORE_DROP,
+    DOCUMENTED_SENTINELS,
     FAILED_POLLS_TOLERATED,
+    HEAT_PUMP_STATUS_MAP,
     MAX_FAILED_ANSWERS,
     MAX_LOST_CONNECTIONS,
     MAX_REGISTERS_PER_READ,
+    STATUS_REGISTERS,
     DataType,
     RegisterDef,
 )
@@ -41,6 +47,41 @@ _T = TypeVar("_T")
 # answer carrying another request's transaction ID) already drops the link in
 # the library; a timeout leaves it open.
 FAILED_ANSWER_ERRORS = (ModbusTimeoutError, ModbusDesyncError)
+
+# Outcomes of a register in a poll (RegisterReading.outcome).
+OUTCOME_PUBLISHED = "published"
+OUTCOME_FILTERED = "filtered"  # read, but outside valid_range
+OUTCOME_REJECTED = "rejected"  # the controller rejected the request
+OUTCOME_KEPT = "kept"  # rejected, last known value kept for now
+
+
+@dataclass
+class RequestCounters:
+    """Modbus request statistics, for the debug log and diagnostics."""
+
+    requests: int = 0  # every attempt sent, retries included
+    failed_answers: int = 0  # timeouts and desyncs
+    lost_connections: int = 0  # requests that lost the link
+    rejected: int = 0  # requests the controller answered with an error code
+
+    def __sub__(self, other: RequestCounters) -> RequestCounters:
+        return RequestCounters(
+            *(
+                getattr(self, field.name) - getattr(other, field.name)
+                for field in dataclasses.fields(self)
+            )
+        )
+
+
+@dataclass
+class RegisterReading:
+    """What the last poll got for one register."""
+
+    address: int
+    raw: int | None  # raw 16-bit word as received; None if not read
+    value: int | None  # raw word decoded per data_type (signed or unsigned)
+    outcome: str
+    detail: str | None = None  # e.g. the meaning of a filtered sentinel
 
 
 def decode_value(register: int, data_type: DataType) -> int:
@@ -93,7 +134,10 @@ def plan_read_blocks(
 
 
 async def async_with_retries(
-    unit: ModbusUnit, request: Callable[[], Awaitable[_T]], description: str
+    unit: ModbusUnit,
+    request: Callable[[], Awaitable[_T]],
+    description: str,
+    counters: RequestCounters | None = None,
 ) -> _T:
     """Runs a Modbus request, retrying it on a failed answer or a lost link.
 
@@ -108,16 +152,23 @@ async def async_with_retries(
     - The connection being closed for good (the entry unloads) is final.
 
     Only for requests that are safe to repeat: every write of this
-    integration sets an absolute value.
+    integration sets an absolute value. `counters`, if given, is updated
+    with every attempt and its outcome.
     """
+    counters = counters if counters is not None else RequestCounters()
     failed_answers = 0
     lost_connections = 0
     while True:
+        counters.requests += 1
         try:
             return await request()
         except ClientClosedError:
             raise
+        except ModbusExceptionError:
+            counters.rejected += 1
+            raise
         except FAILED_ANSWER_ERRORS as err:
+            counters.failed_answers += 1
             failed_answers += 1
             if failed_answers >= MAX_FAILED_ANSWERS:
                 raise
@@ -131,6 +182,7 @@ async def async_with_retries(
                         type(disconnect_err).__name__,
                     )
         except ModbusConnectionError as err:
+            counters.lost_connections += 1
             lost_connections += 1
             if lost_connections > MAX_LOST_CONNECTIONS:
                 raise
@@ -146,6 +198,22 @@ async def async_with_retries(
         )
         # Looked up at call time so tests can shorten it.
         await asyncio.sleep(const.RETRY_DELAY)
+
+
+def _format_duration(seconds: float) -> str:
+    minutes, secs = divmod(int(seconds), 60)
+    hours, minutes = divmod(minutes, 60)
+    if hours:
+        return f"{hours} h {minutes} min"
+    if minutes:
+        return f"{minutes} min {secs} s"
+    return f"{secs} s"
+
+
+def _status_name(code: int | None) -> str:
+    if code is None:
+        return "none"
+    return f"{code} ({HEAT_PUMP_STATUS_MAP.get(code, 'unknown')})"
 
 
 class WeishauptModbusCoordinator(DataUpdateCoordinator[dict[str, float]]):
@@ -185,6 +253,22 @@ class WeishauptModbusCoordinator(DataUpdateCoordinator[dict[str, float]]):
         # requested after a write may be delayed, so this is the newest
         # known device value until the next poll.
         self._written: dict[str, int] = {}
+        # --- Statistics for the debug log and diagnostics ---
+        # Requests since setup (polls and writes).
+        self.counters = RequestCounters()
+        # Connection drops reported by the link (on_connection_lost).
+        self.connection_losses = 0
+        # Polls that failed (no answer) since setup, tolerated or not.
+        self.failed_polls_total = 0
+        # What the last poll got per register key (raw value and outcome).
+        self.readings: dict[str, RegisterReading] = {}
+        # Whether debug logging was on at the last poll: the raw values are
+        # logged once each time it gets switched on (and after setup).
+        self._debug_was_enabled = False
+        # Status registers: last code and since when (monotonic seconds).
+        self._status_since: dict[str, tuple[int | None, float]] = {}
+        # (register key, raw value) already warned about as undocumented.
+        self._warned_values: set[tuple[str, int]] = set()
         # Runtime state shared between WeishauptPvPowerSetpointNumber
         # (number.py) and WeishauptPvSurplusFollowSwitch (switch.py), which
         # have no direct reference to each other. `pv_setpoint_last_value`
@@ -196,6 +280,12 @@ class WeishauptModbusCoordinator(DataUpdateCoordinator[dict[str, float]]):
         # range while the switch is on.
         self.pv_setpoint_last_value: float | None = None
         self.pv_surplus_follow_enabled: bool = False
+
+    @callback
+    def handle_connection_lost(self) -> None:
+        """Called by the link when the connection drops (on_connection_lost)."""
+        self.connection_losses += 1
+        _LOGGER.debug("Modbus connection lost (%d since setup)", self.connection_losses)
 
     async def _read_raw(
         self, reg_type: str, address: int, count: int
@@ -214,7 +304,7 @@ class WeishauptModbusCoordinator(DataUpdateCoordinator[dict[str, float]]):
         description = f"read of {count} {reg_type} register(s) at {address}"
         try:
             values = await async_with_retries(
-                self.unit, partial(read, address, count), description
+                self.unit, partial(read, address, count), description, self.counters
             )
         except ModbusExceptionError as err:
             _LOGGER.debug("Controller rejected the %s: %s", description, err)
@@ -250,7 +340,13 @@ class WeishauptModbusCoordinator(DataUpdateCoordinator[dict[str, float]]):
             return None
         return await self._read_raw("input", reg.address, 1)
 
-    def _store(self, data: dict[str, float], reg: RegisterDef, raw: int) -> None:
+    def _store(
+        self,
+        data: dict[str, float],
+        readings: dict[str, RegisterReading],
+        reg: RegisterDef,
+        raw: int,
+    ) -> None:
         self._written.pop(reg.key, None)
         # The read itself succeeded, whether or not the value ends up
         # published below -- a value outside valid_range is a legitimate
@@ -262,8 +358,30 @@ class WeishauptModbusCoordinator(DataUpdateCoordinator[dict[str, float]]):
         if reg.valid_range is not None and not (
             reg.valid_range[0] <= value <= reg.valid_range[1]
         ):
+            meaning = DOCUMENTED_SENTINELS.get(reg.valid_range, {}).get(value)
+            if meaning is None:
+                self._warn_once(
+                    reg,
+                    value,
+                    "%s (address %s) reported %s, outside its documented range "
+                    "%s and not a documented status value; not published",
+                    reg.key,
+                    reg.address,
+                    value,
+                    reg.valid_range,
+                )
+            readings[reg.key] = RegisterReading(
+                reg.address, raw, value, OUTCOME_FILTERED, meaning or "undocumented value"
+            )
             return
         data[reg.key] = value if reg.scale == 1 else round(value * reg.scale, 6)
+        readings[reg.key] = RegisterReading(reg.address, raw, value, OUTCOME_PUBLISHED)
+
+    def _warn_once(self, reg: RegisterDef, value: int, msg: str, *args: object) -> None:
+        """Warns about an undocumented value once; repeats go to DEBUG."""
+        level = logging.DEBUG if (reg.key, value) in self._warned_values else logging.WARNING
+        self._warned_values.add((reg.key, value))
+        _LOGGER.log(level, msg, *args)
 
     async def _async_update_data(self) -> dict[str, float]:
         """Polls the controller; a short outage keeps the last values.
@@ -273,24 +391,113 @@ class WeishauptModbusCoordinator(DataUpdateCoordinator[dict[str, float]]):
         row, so a brief outage does not flap every entity to unavailable.
         Without previous data (the first refresh) it fails right away.
         """
+        started = time.monotonic()
+        counters_before = dataclasses.replace(self.counters)
         try:
-            data = await self._async_poll()
+            data, readings = await self._async_poll()
         except UpdateFailed as err:
             self._failed_polls += 1
+            self.failed_polls_total += 1
+            _LOGGER.debug(
+                "Poll failed after %.2f s, %s: %s",
+                time.monotonic() - started,
+                self._format_counters(self.counters - counters_before),
+                err,
+            )
             if self.data is not None and self._failed_polls <= FAILED_POLLS_TOLERATED:
                 _LOGGER.debug(
-                    "Poll failed (%d of %d tolerated), keeping the last values: %s",
+                    "Keeping the last values (failed poll %d of %d tolerated)",
                     self._failed_polls,
                     FAILED_POLLS_TOLERATED,
-                    err,
                 )
                 return self.data
             raise
         self._failed_polls = 0
+        self.readings = readings
+        self._log_poll(time.monotonic() - started, self.counters - counters_before, readings)
+        self._log_status_changes(data)
         return data
 
-    async def _async_poll(self) -> dict[str, float]:
+    @staticmethod
+    def _format_counters(counters: RequestCounters) -> str:
+        return (
+            f"{counters.requests} requests ({counters.failed_answers} failed answers, "
+            f"{counters.lost_connections} lost connections, {counters.rejected} rejected)"
+        )
+
+    def _log_poll(
+        self,
+        duration: float,
+        counters: RequestCounters,
+        readings: dict[str, RegisterReading],
+    ) -> None:
+        debug = _LOGGER.isEnabledFor(logging.DEBUG)
+        log_raw_values = debug and not self._debug_was_enabled
+        self._debug_was_enabled = debug
+        if not debug:
+            return
+        outcomes = [reading.outcome for reading in readings.values()]
+        _LOGGER.debug(
+            "Poll: %.2f s, %s, %d registers: %d published, %d filtered, "
+            "%d rejected, %d kept",
+            duration,
+            self._format_counters(counters),
+            len(readings),
+            outcomes.count(OUTCOME_PUBLISHED),
+            outcomes.count(OUTCOME_FILTERED),
+            outcomes.count(OUTCOME_REJECTED),
+            outcomes.count(OUTCOME_KEPT),
+        )
+        if not log_raw_values:
+            return
+        # Once each time debug logging is switched on: every polled
+        # register's raw value, so a value like "0.0 degC" can be told apart
+        # from a status word.
+        for key, reading in sorted(readings.items(), key=lambda item: item[1].address):
+            _LOGGER.debug(
+                "Register %s (address %s): raw %s, %s%s",
+                key,
+                reading.address,
+                "-" if reading.raw is None else f"0x{reading.raw:04X} = {reading.value}",
+                reading.outcome,
+                f" ({reading.detail})" if reading.detail else "",
+            )
+
+    def _log_status_changes(self, data: dict[str, float]) -> None:
+        now = time.monotonic()
+        for reg in STATUS_REGISTERS:
+            raw = data.get(reg.key)
+            code = int(raw) if raw is not None else None
+            if code is not None and code not in HEAT_PUMP_STATUS_MAP:
+                self._warn_once(
+                    reg,
+                    code,
+                    "%s (address %s) reported the undocumented status code %s",
+                    reg.key,
+                    reg.address,
+                    code,
+                )
+            previous = self._status_since.get(reg.key)
+            if previous is None:
+                self._status_since[reg.key] = (code, now)
+                continue
+            previous_code, since = previous
+            if code == previous_code:
+                continue
+            self._status_since[reg.key] = (code, now)
+            _LOGGER.debug(
+                "%s: %s -> %s after %s",
+                reg.key,
+                _status_name(previous_code),
+                _status_name(code),
+                _format_duration(now - since),
+            )
+
+    async def _async_poll(
+        self,
+    ) -> tuple[dict[str, float], dict[str, RegisterReading]]:
         data: dict[str, float] = {}
+        readings: dict[str, RegisterReading] = {}
 
         # Only poll registers a currently-subscribed entity actually needs.
         # Each CoordinatorEntity passes its register keys as `context` when
@@ -320,7 +527,7 @@ class WeishauptModbusCoordinator(DataUpdateCoordinator[dict[str, float]]):
             raw_values = await self._read_raw(reg_type, block[0].address, len(block))
             if raw_values is not None and len(raw_values) == len(block):
                 for reg, raw in zip(block, raw_values):
-                    self._store(data, reg, raw)
+                    self._store(data, readings, reg, raw)
                 continue
 
             # One unavailable register (e.g. a heating circuit that is not
@@ -339,6 +546,7 @@ class WeishauptModbusCoordinator(DataUpdateCoordinator[dict[str, float]]):
                         )
                     failures = self._consecutive_failures.get(reg.key, 0) + 1
                     self._consecutive_failures[reg.key] = failures
+                    outcome = OUTCOME_REJECTED
                     # Fewer than CONSECUTIVE_FAILURES_BEFORE_DROP failures in
                     # a row: keep showing the last known value rather than
                     # letting a single transient error flap the entity to
@@ -347,11 +555,15 @@ class WeishauptModbusCoordinator(DataUpdateCoordinator[dict[str, float]]):
                         previous_value = (self.data or {}).get(reg.key)
                         if previous_value is not None:
                             data[reg.key] = previous_value
+                            outcome = OUTCOME_KEPT
+                    readings[reg.key] = RegisterReading(
+                        reg.address, None, None, outcome, f"{failures} in a row"
+                    )
                     continue
                 self._failed_keys.discard(reg.key)
-                self._store(data, reg, raw_single[0])
+                self._store(data, readings, reg, raw_single[0])
 
-        return data
+        return data, readings
 
     async def _controller_holds(self, reg: RegisterDef, raw_value: int) -> bool:
         """Whether the controller holds `raw_value` in `reg` right now.
@@ -414,18 +626,25 @@ class WeishauptModbusCoordinator(DataUpdateCoordinator[dict[str, float]]):
                 self.async_update_listeners()
                 return
 
+        _LOGGER.debug(
+            "Writing %s (address %s): %s (raw %s)", reg.key, reg.address, value, raw_value
+        )
         try:
             await async_with_retries(
                 self.unit,
                 partial(self.unit.write_register, reg.address, register),
                 f"write of {reg.key} (address {reg.address})",
+                self.counters,
             )
         except ModbusExceptionError as err:
+            _LOGGER.debug("Controller rejected the write of %s: %s", reg.key, err)
             raise UpdateFailed(f"Error writing {reg.key}: {err}") from err
         except ModbusError as err:
+            _LOGGER.debug("Write of %s failed: %s", reg.key, type(err).__name__)
             raise UpdateFailed(
                 f"Modbus error while writing {reg.key}: {type(err).__name__}"
             ) from err
         self._written[reg.key] = raw_value
+        _LOGGER.debug("Wrote %s", reg.key)
 
         await self.async_request_refresh()

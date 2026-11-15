@@ -71,6 +71,26 @@ SENSOR_RAW_RANGE = (-500, 5000)      # "Format Sensor": -50.0 ... 500.0°C
 SETPOINT_RAW_RANGE = (50, 5000)      # "FormatSollwert": 5.0 ... 500.0°C
 CODE_RAW_RANGE = (0, 65534)          # "FormatFehlermeldung": error/warning code
 
+# Raw values outside a register's valid_range that the data point list
+# documents, by range, with what they mean. Used for the debug log; any
+# other out-of-range value is logged as a warning (once per value).
+DOCUMENTED_SENTINELS: dict[tuple[int, int], dict[int, str]] = {
+    SENSOR_RAW_RANGE: {
+        -32768: "no sensor",
+        -32767: "sensor open circuit",
+        -32766: "sensor short circuit",
+        -32758: "sensor digital status off",
+        -32757: "sensor digital status on",
+    },
+    SETPOINT_RAW_RANGE: {
+        -32768: "no setpoint request active",
+        1: "no setpoint request active",
+    },
+    CODE_RAW_RANGE: {
+        65535: "no code active",
+    },
+}
+
 
 @dataclass(frozen=True)
 class RegisterDef:

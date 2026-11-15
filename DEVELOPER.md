@@ -202,6 +202,37 @@ and recovery to its consumers; the coordinator handles them:
   exception sequences. The simulator tests run over the real shared
   connection.
 
+## Debug log
+
+With debug logging enabled (integration page → *Enable debug logging*),
+the coordinator logs what helps to improve the integration. None of its
+lines contain the host, IP address or device name, so a log can be
+attached to an issue; the `modbus_connection`/`tmodbus` library lines can
+name the address, though.
+
+| Line | Meaning |
+|---|---|
+| `Poll: 0.42 s, 18 requests (0 failed answers, 0 lost connections, 0 rejected), 33 registers: 32 published, 1 filtered, 0 rejected, 0 kept` | One per poll. *filtered*: read, but outside `valid_range` (no sensor, no setpoint request, ...). *rejected*: the controller refused the register. *kept*: refused, last value kept (see "Tolerating transient read failures"). |
+| `Register outdoor_temp_2 (address 30002): raw 0x8000 = -32768, filtered (no sensor)` | Every polled register's raw word, once each time debug logging is switched on (and after setup). Tells a real `0.0` from a status word. Only registers of enabled entities are polled after setup. |
+| `heat_pump_status: 19 (heating) -> 43 (oil_recirculation) after 9 min 10 s` | A change of the heat pump or system status, with how long the previous one lasted. |
+| `Retrying read of ... after ModbusTimeoutError (failed answers 1/3, lost connections 0/2)` | A retry (see "Connection, retries and timeout"). |
+| `Modbus connection lost (2 since setup)` | The link reported a drop (`on_connection_lost`). |
+| `Poll failed after ... s` / `Keeping the last values (failed poll 1 of 3 tolerated)` | A poll without an answer, and whether the last values are kept. |
+| `Writing dhw_normal_target_temp (address 42103): 55.0 (raw 550)` / `Wrote ...` / `Skipping write ...` / `... changed at the controller since the last poll ...` | The write path, including the fresh read before a skip. |
+
+Logged as **warnings**, once per register and value (repeats go to
+DEBUG), regardless of the log level:
+
+- a status code not in `HEAT_PUMP_STATUS_MAP` -- worth adding to the map;
+- a raw value outside `valid_range` that is not one of the
+  `DOCUMENTED_SENTINELS` (`const.py`) -- an undocumented status word or a
+  wrong range.
+
+The counters (`coordinator.counters`, `connection_losses`,
+`failed_polls_total`) and the last poll's `readings` (raw word, decoded
+value, outcome per register) are kept on the coordinator for the
+diagnostics download as well.
+
 ## Writing and the controller's EEPROM
 
 Every parameter write is stored in the controller's EEPROM (100,000 write

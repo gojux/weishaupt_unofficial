@@ -1,6 +1,7 @@
 """Decoding, block planning and reading against the simulator."""
 from __future__ import annotations
 
+import logging
 from collections.abc import Iterable
 from unittest.mock import patch
 
@@ -342,3 +343,82 @@ async def test_uses_home_assistants_shared_connection(
     await hass.config_entries.async_unload(config_entry.entry_id)
     await hass.async_block_till_done()
     assert async_get_connection_info(hass) == []
+
+
+LOGGER_NAME = "custom_components.weishaupt_unofficial.coordinator"
+
+
+async def test_debug_log_summarizes_polls_and_dumps_raw_values(
+    hass: HomeAssistant, config_entry, simulator: Simulator, caplog: pytest.LogCaptureFixture
+) -> None:
+    caplog.set_level(logging.DEBUG, logger=LOGGER_NAME)
+    config_entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(config_entry.entry_id)
+    await hass.async_block_till_done()
+    coordinator = hass.data[DOMAIN][config_entry.entry_id]
+
+    assert "Poll: " in caplog.text and "published" in caplog.text
+    # Raw values once after setup, with the meaning of a filtered status word.
+    assert "Register outdoor_temp_2 (address 30002): raw 0x8000 = -32768, filtered (no sensor)" in caplog.text
+    assert "Register outdoor_temp_1 (address 30001): raw 0x0037 = 55, published" in caplog.text
+    assert coordinator.readings["outdoor_temp_2"].detail == "no sensor"
+    assert coordinator.counters.requests > 0
+
+    caplog.clear()
+    await coordinator.async_refresh()
+    assert "Poll: " in caplog.text
+    assert "Register outdoor_temp_1" not in caplog.text  # dumped only once
+
+    await hass.config_entries.async_unload(config_entry.entry_id)
+    await hass.async_block_till_done()
+
+
+async def test_status_changes_and_unknown_codes_are_logged(
+    hass: HomeAssistant, integration, simulator: Simulator, caplog: pytest.LogCaptureFixture
+) -> None:
+    caplog.set_level(logging.DEBUG, logger=LOGGER_NAME)
+    coordinator = hass.data[DOMAIN][integration.entry_id]
+
+    await simulator.write(33101, 43)
+    await coordinator.async_refresh()
+    assert "heat_pump_status: 19 (heating) -> 43 (oil_recirculation) after" in caplog.text
+
+    await simulator.write(33101, 99)
+    await coordinator.async_refresh()
+    await coordinator.async_refresh()
+    warnings = [
+        r for r in caplog.records
+        if r.levelno == logging.WARNING and "undocumented status code 99" in r.getMessage()
+    ]
+    assert len(warnings) == 1  # once per value; repeats go to DEBUG
+
+
+async def test_undocumented_out_of_range_value_is_warned_once(
+    hass: HomeAssistant, caplog: pytest.LogCaptureFixture
+) -> None:
+    reg = next(r for r in ALL_REGISTERS if r.key == "outdoor_temp_1")
+    unit = FakeUnit([6000])  # 600.0 degC: outside -50 ... 500, not a status word
+    coordinator = WeishauptModbusCoordinator(hass, unit, "Heat Pump", 30)
+    with patch(
+        "custom_components.weishaupt_unofficial.coordinator.ALL_REGISTERS", [reg]
+    ):
+        assert await coordinator._async_update_data() == {}
+        await coordinator._async_update_data()
+    warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
+    assert len(warnings) == 1 and "reported 6000" in warnings[0].getMessage()
+    assert coordinator.readings[reg.key].detail == "undocumented value"
+
+
+async def test_retries_are_counted(hass: HomeAssistant) -> None:
+    reg = next(r for r in ALL_REGISTERS if r.key == "outdoor_temp_1")
+    unit = FakeUnit([timeout(), lost(), 55])
+    coordinator = WeishauptModbusCoordinator(hass, unit, "Heat Pump", 30)
+    with patch(
+        "custom_components.weishaupt_unofficial.coordinator.ALL_REGISTERS", [reg]
+    ):
+        await coordinator._async_update_data()
+    assert coordinator.counters.requests == 3
+    assert coordinator.counters.failed_answers == 1
+    assert coordinator.counters.lost_connections == 1
+    coordinator.handle_connection_lost()
+    assert coordinator.connection_losses == 1
