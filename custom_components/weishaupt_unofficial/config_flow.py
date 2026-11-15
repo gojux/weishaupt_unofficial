@@ -6,24 +6,31 @@ from typing import Any
 
 import voluptuous as vol
 from homeassistant import config_entries
+from homeassistant.components.modbus import async_get_temporary_unit
 from homeassistant.const import CONF_HOST, CONF_NAME, CONF_PORT, CONF_SCAN_INTERVAL
+from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResult, section
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import selector
 
-from pymodbus.client import AsyncModbusTcpClient
+from modbus_connection import ModbusError, ModbusExceptionError, ModbusTcpParams
 
 from .const import (
     CONF_DEVICE_ID,
     CONF_PV_SURPLUS_ENTITY_ID,
+    CONF_TIMEOUT,
     CURRENT_TEMP_SOURCE_OPTIONS,
     DEFAULT_CURRENT_TEMP_SOURCE,
     DEFAULT_DEVICE_ID,
     DEFAULT_NAME,
     DEFAULT_PORT,
     DEFAULT_SCAN_INTERVAL,
+    DEFAULT_TIMEOUT,
     DOMAIN,
     HEATING_CIRCUITS,
     CONNECTION_TEST_ADDRESS,
+    MAX_TIMEOUT,
+    MIN_TIMEOUT,
     current_temp_entity_key,
     current_temp_source_key,
 )
@@ -53,26 +60,36 @@ STEP_RECONFIGURE_DATA_SCHEMA = vol.Schema(
 )
 
 
-async def test_connection(host: str, port: int, device_id: int) -> bool:
-    """Checks whether a Modbus device is reachable with the given settings."""
-    client = AsyncModbusTcpClient(host, port=port)
+async def test_connection(
+    hass: HomeAssistant, host: str, port: int, device_id: int
+) -> bool:
+    """Checks whether a Modbus device is reachable with the given settings.
+
+    Uses a temporary unit on Home Assistant's shared Modbus connection: if a
+    config entry already holds the connection to this device, the test
+    shares it; otherwise the connection is closed again afterwards. The
+    connection only opens on the first request, so a real register is read.
+    """
     try:
-        connected = await client.connect()
-        if not connected:
-            return False
-        # Reading the first outdoor temperature is enough to test connectivity.
-        # An error code returned by the device (e.g. "IllegalAddress") still
-        # counts as "device reachable" -- only an actual communication
+        async with async_get_temporary_unit(
+            hass, ModbusTcpParams(host=host, port=port), device_id
+        ) as unit:
+            # Reading the first outdoor temperature is enough to test
+            # connectivity.
+            await unit.read_input_registers(CONNECTION_TEST_ADDRESS, 1)
+    except ModbusExceptionError:
+        # An error code returned by the device (e.g. "IllegalDataAddress")
+        # still counts as "device reachable" -- only an actual communication
         # failure does not.
-        result = await client.read_input_registers(
-            CONNECTION_TEST_ADDRESS, count=1, device_id=device_id
-        )
-        return result is not None
-    except Exception:  # pylint: disable=broad-except
-        _LOGGER.exception("Connection test failed")
+        return True
+    except ModbusError as err:
+        _LOGGER.debug("Connection test failed: %s", type(err).__name__)
         return False
-    finally:
-        client.close()
+    except HomeAssistantError as err:
+        # The device is already in use over different link settings.
+        _LOGGER.warning("Connection test failed: %s", err)
+        return False
+    return True
 
 
 class WeishauptUnofficialConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
@@ -97,7 +114,7 @@ class WeishauptUnofficialConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             await self.async_set_unique_id(unique_id)
             self._abort_if_unique_id_configured()
 
-            connection_ok = await test_connection(host, port, device_id)
+            connection_ok = await test_connection(self.hass, host, port, device_id)
             if not connection_ok:
                 errors["base"] = "cannot_connect"
             else:
@@ -130,7 +147,7 @@ class WeishauptUnofficialConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             port = user_input[CONF_PORT]
             device_id = user_input[CONF_DEVICE_ID]
 
-            connection_ok = await test_connection(host, port, device_id)
+            connection_ok = await test_connection(self.hass, host, port, device_id)
             if not connection_ok:
                 errors["base"] = "cannot_connect"
             else:
@@ -207,12 +224,18 @@ class WeishauptUnofficialOptionsFlow(config_entries.OptionsFlow):
             self.config_entry.data.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL),
         )
 
+        current_timeout = self.config_entry.options.get(CONF_TIMEOUT, DEFAULT_TIMEOUT)
+
         general_schema = vol.Schema(
             {
                 vol.Optional(
                     CONF_SCAN_INTERVAL,
                     description={"suggested_value": current_scan_interval},
                 ): vol.Coerce(int),
+                vol.Optional(
+                    CONF_TIMEOUT,
+                    description={"suggested_value": current_timeout},
+                ): vol.All(vol.Coerce(int), vol.Range(min=MIN_TIMEOUT, max=MAX_TIMEOUT)),
             }
         )
         schema_dict: dict[Any, Any] = {

@@ -1,6 +1,8 @@
 """Config flow and options flow."""
 from __future__ import annotations
 
+import pytest
+import voluptuous as vol
 from homeassistant.config_entries import SOURCE_USER
 from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResultType
@@ -100,3 +102,25 @@ async def test_options_flow_sets_pv_surplus_source_entity(
     assert integration.options[CONF_PV_SURPLUS_ENTITY_ID] == "sensor.pv_surplus"
     # The "Follow PV surplus" switch is only created once a source is set.
     assert entity_id(hass, "switch", integration, "pv_surplus_follow")
+
+
+async def test_options_flow_sets_the_timeout(hass: HomeAssistant, integration) -> None:
+    def user_input(timeout: int) -> dict:
+        data = {"general": {"scan_interval": 30, "timeout": timeout}, "pv_surplus": {}}
+        for number in range(1, 5):
+            data[f"heating_circuit_{number}"] = {}
+        return data
+
+    result = await hass.config_entries.options.async_init(integration.entry_id)
+    with pytest.raises(vol.Invalid):
+        await hass.config_entries.options.async_configure(
+            result["flow_id"], user_input(20)
+        )
+
+    result = await hass.config_entries.options.async_init(integration.entry_id)
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], user_input(7)
+    )
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    await hass.async_block_till_done()
+    assert integration.options["timeout"] == 7

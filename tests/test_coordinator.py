@@ -1,28 +1,153 @@
 """Decoding, block planning and reading against the simulator."""
 from __future__ import annotations
 
-from types import SimpleNamespace
+from collections.abc import Iterable
 from unittest.mock import patch
 
 import pytest
+from homeassistant.components.modbus.connection import async_get_connection_info
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import UpdateFailed
+from modbus_connection import (
+    IllegalDataAddressError,
+    ModbusConnectionError,
+    ModbusDesyncError,
+    ModbusTimeoutError,
+)
 
 from custom_components.weishaupt_unofficial.const import (
     ALL_REGISTERS,
     CONSECUTIVE_FAILURES_BEFORE_DROP,
     DOMAIN,
+    FAILED_POLLS_TOLERATED,
     MAX_REGISTERS_PER_READ,
     RegisterDef,
 )
 from custom_components.weishaupt_unofficial.coordinator import (
     WeishauptModbusCoordinator,
+    async_with_retries,
     decode_value,
     encode_value,
     plan_read_blocks,
 )
 
 from conftest import Simulator
+
+
+class FakeUnit:
+    """A ModbusUnit whose requests answer from scripted outcomes.
+
+    Each request takes the next outcome: an exception instance is raised,
+    anything else is returned (registers repeated to the requested count).
+    The last outcome repeats once the script runs out.
+    """
+
+    def __init__(self, outcomes: Iterable = (), holding: Iterable = ()) -> None:
+        self.input_outcomes = list(outcomes)
+        self.holding_outcomes = list(holding) or [IllegalDataAddressError("no")]
+        self.requests: list[tuple[str, int, int]] = []
+        self.writes: list[tuple[int, int]] = []
+        self.write_outcomes: list = [None]
+        self.disconnects = 0
+
+    @staticmethod
+    def _next(outcomes: list):
+        outcome = outcomes.pop(0) if len(outcomes) > 1 else outcomes[0]
+        if isinstance(outcome, Exception):
+            raise outcome
+        return outcome
+
+    async def read_input_registers(self, address: int, count: int) -> list[int]:
+        self.requests.append(("input", address, count))
+        return [self._next(self.input_outcomes)] * count
+
+    async def read_holding_registers(self, address: int, count: int) -> list[int]:
+        self.requests.append(("holding", address, count))
+        return [self._next(self.holding_outcomes)] * count
+
+    async def write_register(self, address: int, value: int) -> None:
+        self.writes.append((address, value))
+        self._next(self.write_outcomes)
+
+    async def disconnect(self) -> None:
+        self.disconnects += 1
+
+
+def timeout() -> ModbusTimeoutError:
+    return ModbusTimeoutError("timeout")
+
+
+def lost() -> ModbusConnectionError:
+    return ModbusConnectionError("Connection lost before response was received")
+
+
+async def _read(unit: FakeUnit):
+    return await async_with_retries(
+        unit, lambda: unit.read_input_registers(30001, 1), "test read"
+    )
+
+
+async def test_retry_succeeds_after_timeouts_and_a_lost_connection() -> None:
+    unit = FakeUnit([timeout(), timeout(), lost(), 55])
+    assert await _read(unit) == [55]
+    assert len(unit.requests) == 4
+    # A timeout leaves the link open: it is dropped so the retry gets a new one.
+    assert unit.disconnects == 2
+
+
+async def test_retry_gives_up_after_three_failed_answers() -> None:
+    unit = FakeUnit([timeout(), ModbusDesyncError("late answer"), timeout(), 55])
+    with pytest.raises(ModbusTimeoutError):
+        await _read(unit)
+    assert len(unit.requests) == 3
+
+
+async def test_retry_gives_up_after_three_lost_connections() -> None:
+    unit = FakeUnit([lost(), lost(), lost(), 55])
+    with pytest.raises(ModbusConnectionError):
+        await _read(unit)
+    assert len(unit.requests) == 3
+
+
+async def test_retry_does_not_repeat_a_rejected_request() -> None:
+    unit = FakeUnit([IllegalDataAddressError("no such register"), 55])
+    with pytest.raises(IllegalDataAddressError):
+        await _read(unit)
+    assert len(unit.requests) == 1
+
+
+async def test_write_is_retried_after_a_lost_connection(hass: HomeAssistant) -> None:
+    unit = FakeUnit()
+    unit.write_outcomes = [lost(), None]
+    coordinator = WeishauptModbusCoordinator(hass, unit, "Heat Pump", 30)
+    reg = next(r for r in ALL_REGISTERS if r.key == "dhw_normal_target_temp")
+    with patch.object(coordinator, "async_request_refresh"):
+        await coordinator.async_write_value(reg, 55.0)
+    assert unit.writes == [(42103, 550), (42103, 550)]
+
+
+async def test_short_outage_keeps_the_last_values(hass: HomeAssistant) -> None:
+    """A poll that gets no answer keeps the previous data for up to
+    FAILED_POLLS_TOLERATED polls in a row; the next one fails."""
+    reg = next(r for r in ALL_REGISTERS if r.key == "outdoor_temp_1")
+    unit = FakeUnit([55])
+    coordinator = WeishauptModbusCoordinator(hass, unit, "Heat Pump", 30)
+    with patch(
+        "custom_components.weishaupt_unofficial.coordinator.ALL_REGISTERS", [reg]
+    ):
+        coordinator.data = await coordinator._async_update_data()
+        unit.input_outcomes = [timeout()]
+        for _ in range(FAILED_POLLS_TOLERATED):
+            assert await coordinator._async_update_data() == {reg.key: 5.5}
+        with pytest.raises(UpdateFailed):
+            await coordinator._async_update_data()
+
+        unit.input_outcomes = [60]
+        coordinator.data = await coordinator._async_update_data()
+        assert coordinator.data == {reg.key: 6.0}
+        # The counter starts over after a good poll.
+        unit.input_outcomes = [timeout()]
+        assert await coordinator._async_update_data() == {reg.key: 6.0}
 
 
 def test_decode_and_encode() -> None:
@@ -91,17 +216,8 @@ async def test_only_needed_registers_are_polled(
 
 
 async def test_holding_registers_fall_back_to_input(hass: HomeAssistant) -> None:
-    class FakeClient:
-        connected = True
-
-        async def read_holding_registers(self, address, count, device_id):
-            return SimpleNamespace(isError=lambda: True)
-
-        async def read_input_registers(self, address, count, device_id):
-            return SimpleNamespace(isError=lambda: False, registers=[2] * count)
-
-    coordinator = WeishauptModbusCoordinator(hass, "Heat Pump", "host", 502, 1, 30)
-    coordinator.client = FakeClient()
+    unit = FakeUnit([2], holding=[IllegalDataAddressError("not a holding register")])
+    coordinator = WeishauptModbusCoordinator(hass, unit, "Heat Pump", 30)
     mode = next(reg for reg in ALL_REGISTERS if reg.key == "hc1_mode")
     with patch(
         "custom_components.weishaupt_unofficial.coordinator.ALL_REGISTERS", [mode]
@@ -117,7 +233,7 @@ async def test_write_is_skipped_when_value_is_unchanged(
     coordinator = hass.data[DOMAIN][integration.entry_id]
     reg: RegisterDef = next(r for r in ALL_REGISTERS if r.key == "dhw_normal_target_temp")
     with patch.object(
-        coordinator.client, "write_register", wraps=coordinator.client.write_register
+        coordinator.unit, "write_register", wraps=coordinator.unit.write_register
     ) as write:
         await coordinator.async_write_value(reg, 50.0)
         assert write.call_count == 0
@@ -135,7 +251,7 @@ async def test_pv_setpoint_write_is_never_skipped(
     coordinator = hass.data[DOMAIN][integration.entry_id]
     reg: RegisterDef = next(r for r in ALL_REGISTERS if r.key == "pv_power_setpoint")
     with patch.object(
-        coordinator.client, "write_register", wraps=coordinator.client.write_register
+        coordinator.unit, "write_register", wraps=coordinator.unit.write_register
     ) as write:
         await coordinator.async_write_value(reg, 2000)
         await coordinator.async_write_value(reg, 2000)
@@ -158,25 +274,15 @@ async def test_transient_failures_keep_the_last_known_value(hass: HomeAssistant)
     transient Modbus error must not immediately flap an entity to
     unavailable/unknown. Once the failures reach that count, it is dropped."""
     reg = next(r for r in ALL_REGISTERS if r.key == "outdoor_temp_1")
-
-    class FlakyClient:
-        connected = True
-        fail = False
-
-        async def read_input_registers(self, address, count, device_id):
-            if self.fail:
-                return SimpleNamespace(isError=lambda: True)
-            return SimpleNamespace(isError=lambda: False, registers=[55])
-
-    coordinator = WeishauptModbusCoordinator(hass, "Heat Pump", "host", 502, 1, 30)
-    coordinator.client = FlakyClient()
+    unit = FakeUnit([55])
+    coordinator = WeishauptModbusCoordinator(hass, unit, "Heat Pump", 30)
     with patch(
         "custom_components.weishaupt_unofficial.coordinator.ALL_REGISTERS", [reg]
     ):
         coordinator.data = await coordinator._async_update_data()
         assert coordinator.data[reg.key] == 5.5
 
-        coordinator.client.fail = True
+        unit.input_outcomes = [IllegalDataAddressError("rejected")]
         for _ in range(CONSECUTIVE_FAILURES_BEFORE_DROP - 1):
             coordinator.data = await coordinator._async_update_data()
             assert coordinator.data[reg.key] == 5.5
@@ -185,7 +291,26 @@ async def test_transient_failures_keep_the_last_known_value(hass: HomeAssistant)
         assert reg.key not in coordinator.data
 
 
-async def test_unreachable_device_fails_the_refresh(hass: HomeAssistant) -> None:
-    coordinator = WeishauptModbusCoordinator(hass, "Heat Pump", "127.0.0.1", 1, 1, 30)
+async def test_unreachable_device_fails_the_first_refresh(hass: HomeAssistant) -> None:
+    unit = FakeUnit([lost()], holding=[lost()])
+    coordinator = WeishauptModbusCoordinator(hass, unit, "Heat Pump", 30)
     with pytest.raises(UpdateFailed):
         await coordinator._async_update_data()
+    # Gave up on the first block instead of waiting out every other one.
+    assert len(unit.requests) == 3
+
+
+async def test_uses_home_assistants_shared_connection(
+    hass: HomeAssistant, config_entry
+) -> None:
+    """The unit comes from the modbus integration, which keeps the
+    connection while the entry holds it and closes it when it unloads."""
+    config_entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(config_entry.entry_id)
+    await hass.async_block_till_done()
+    [info] = async_get_connection_info(hass)
+    assert info.units == {config_entry.entry_id: [1]}
+
+    await hass.config_entries.async_unload(config_entry.entry_id)
+    await hass.async_block_till_done()
+    assert async_get_connection_info(hass) == []

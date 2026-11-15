@@ -39,7 +39,12 @@
           "general": {
             "name": "General",
             "data": {
-              "scan_interval": "Polling interval (seconds)"
+              "scan_interval": "Polling interval (seconds)",
+              "timeout": "Timeout per request (seconds)"
+            },
+            "data_description": {
+              "scan_interval": "How often the heat pump is read. 30 seconds is recommended; much longer intervals may let the controller close the idle connection.",
+              "timeout": "How long to wait for an answer before a request is repeated (3-10 seconds, default 5). Each request is tried up to 3 times."
             }
           },
           "heating_circuit_1": {

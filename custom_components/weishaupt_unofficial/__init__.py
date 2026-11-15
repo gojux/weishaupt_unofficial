@@ -1,11 +1,21 @@
 """Weishaupt Heat Pump Integration (unofficial)."""
 from __future__ import annotations
 
+from homeassistant.components.modbus import async_get_unit
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_HOST, CONF_NAME, CONF_PORT, CONF_SCAN_INTERVAL, Platform
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import ConfigEntryError, HomeAssistantError
 
-from .const import CONF_DEVICE_ID, DEFAULT_SCAN_INTERVAL, DOMAIN
+from modbus_connection import ModbusTcpParams
+
+from .const import (
+    CONF_DEVICE_ID,
+    CONF_TIMEOUT,
+    DEFAULT_SCAN_INTERVAL,
+    DEFAULT_TIMEOUT,
+    DOMAIN,
+)
 from .coordinator import WeishauptModbusCoordinator
 
 PLATFORMS: list[Platform] = [
@@ -28,10 +38,23 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     scan_interval = entry.options.get(
         CONF_SCAN_INTERVAL, entry.data.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL)
     )
+    timeout = entry.options.get(CONF_TIMEOUT, DEFAULT_TIMEOUT)
 
-    coordinator = WeishauptModbusCoordinator(
-        hass, name, host, port, device_id, scan_interval
-    )
+    # A unit on Home Assistant's shared Modbus connection. Home Assistant
+    # releases it when this entry unloads and closes the connection behind
+    # the last entry holding it.
+    try:
+        unit = async_get_unit(hass, entry, ModbusTcpParams(host=host, port=port), device_id)
+    except HomeAssistantError as err:
+        # The device is already in use over different link settings.
+        raise ConfigEntryError(str(err)) from err
+
+    # Set before the first request: raising the timeout of a live link drops
+    # it. Withdrawn on unload, as another entry may keep the connection.
+    unit.require_timeout(timeout)
+    entry.async_on_unload(lambda: unit.require_timeout(None))
+
+    coordinator = WeishauptModbusCoordinator(hass, unit, name, scan_interval)
     await coordinator.async_config_entry_first_refresh()
 
     hass.data.setdefault(DOMAIN, {})
@@ -44,15 +67,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 
 async def _async_update_listener(hass: HomeAssistant, entry: ConfigEntry) -> None:
-    """Reload the entry when options change (e.g. polling interval, or a
-    heating circuit's current-temperature source)."""
+    """Reload the entry when options change (e.g. polling interval, timeout,
+    or a heating circuit's current-temperature source)."""
     await hass.config_entries.async_reload(entry.entry_id)
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    """Unloads the integration."""
+    """Unloads the integration. The Modbus unit is released by Home Assistant."""
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     if unload_ok:
-        coordinator: WeishauptModbusCoordinator = hass.data[DOMAIN].pop(entry.entry_id)
-        await coordinator.async_close()
+        hass.data[DOMAIN].pop(entry.entry_id)
     return unload_ok

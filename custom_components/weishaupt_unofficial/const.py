@@ -32,6 +32,26 @@ MAX_REGISTERS_PER_READ = 5
 # transient Modbus error does not immediately flap an entity's state.
 CONSECUTIVE_FAILURES_BEFORE_DROP = 4
 
+# A whole poll that fails (no answer, connection lost) keeps the last values
+# for this many polls in a row; only the next failed poll after that takes
+# the entities to unavailable.
+FAILED_POLLS_TOLERATED = 3
+
+# Per-request response timeout (seconds), configurable in the options. With
+# the retries below, a short timeout bounds an outage's cost per request to
+# about MAX_FAILED_ANSWERS * timeout + delays.
+CONF_TIMEOUT = "timeout"
+DEFAULT_TIMEOUT = 5
+MIN_TIMEOUT = 3
+MAX_TIMEOUT = 10
+
+# Retries per Modbus request. The shared connection neither retries nor
+# reconnects within a request: a request that got no (valid) answer counts
+# as a failed answer, a dropped link does not (the retry runs on a new link).
+MAX_FAILED_ANSWERS = 3
+MAX_LOST_CONNECTIONS = 2
+RETRY_DELAY = 1.0  # seconds; some devices refuse an immediate reconnect
+
 RegisterType = Literal["holding", "input"]
 DataType = Literal["int16", "uint16"]
 

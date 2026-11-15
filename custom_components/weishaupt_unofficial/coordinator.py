@@ -1,24 +1,46 @@
-"""DataUpdateCoordinator: handles the Modbus connection, polling and writes."""
+"""DataUpdateCoordinator: polling and writes over Home Assistant's shared Modbus connection."""
 from __future__ import annotations
 
+import asyncio
 import logging
+from collections.abc import Awaitable, Callable
 from datetime import timedelta
+from functools import partial
+from typing import TypeVar
 
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
-from pymodbus.client import AsyncModbusTcpClient
-from pymodbus.exceptions import ModbusException
+from modbus_connection import (
+    ClientClosedError,
+    ModbusConnectionError,
+    ModbusDesyncError,
+    ModbusError,
+    ModbusExceptionError,
+    ModbusTimeoutError,
+    ModbusUnit,
+)
 
+from . import const
 from .const import (
     ALL_REGISTERS,
     CONSECUTIVE_FAILURES_BEFORE_DROP,
+    FAILED_POLLS_TOLERATED,
+    MAX_FAILED_ANSWERS,
+    MAX_LOST_CONNECTIONS,
     MAX_REGISTERS_PER_READ,
     DataType,
     RegisterDef,
 )
 
 _LOGGER = logging.getLogger(__name__)
+
+_T = TypeVar("_T")
+
+# No (valid) answer to a request: counts as a failed answer. A desync (a late
+# answer carrying another request's transaction ID) already drops the link in
+# the library; a timeout leaves it open.
+FAILED_ANSWER_ERRORS = (ModbusTimeoutError, ModbusDesyncError)
 
 
 def decode_value(register: int, data_type: DataType) -> int:
@@ -70,16 +92,70 @@ def plan_read_blocks(
     return blocks
 
 
+async def async_with_retries(
+    unit: ModbusUnit, request: Callable[[], Awaitable[_T]], description: str
+) -> _T:
+    """Runs a Modbus request, retrying it on a failed answer or a lost link.
+
+    - ModbusExceptionError (the controller answered with an error code) is
+      final and raised at once.
+    - A timeout or desync counts as a failed answer; the request is given up
+      after MAX_FAILED_ANSWERS of them. A timeout leaves the link open, and a
+      peer that stopped answering would time out every retry on it, so the
+      link is dropped first: the retry runs on a new one.
+    - A lost connection does not count as a failed answer (the retry runs on
+      a new link), but at most MAX_LOST_CONNECTIONS are retried.
+    - The connection being closed for good (the entry unloads) is final.
+
+    Only for requests that are safe to repeat: every write of this
+    integration sets an absolute value.
+    """
+    failed_answers = 0
+    lost_connections = 0
+    while True:
+        try:
+            return await request()
+        except ClientClosedError:
+            raise
+        except FAILED_ANSWER_ERRORS as err:
+            failed_answers += 1
+            if failed_answers >= MAX_FAILED_ANSWERS:
+                raise
+            reason = type(err).__name__
+            if isinstance(err, ModbusTimeoutError):
+                try:
+                    await unit.disconnect()
+                except ModbusError as disconnect_err:
+                    _LOGGER.debug(
+                        "Dropping the link after a timeout failed: %s",
+                        type(disconnect_err).__name__,
+                    )
+        except ModbusConnectionError as err:
+            lost_connections += 1
+            if lost_connections > MAX_LOST_CONNECTIONS:
+                raise
+            reason = type(err).__name__
+        _LOGGER.debug(
+            "Retrying %s after %s (failed answers %d/%d, lost connections %d/%d)",
+            description,
+            reason,
+            failed_answers,
+            MAX_FAILED_ANSWERS,
+            lost_connections,
+            MAX_LOST_CONNECTIONS,
+        )
+        # Looked up at call time so tests can shorten it.
+        await asyncio.sleep(const.RETRY_DELAY)
+
+
 class WeishauptModbusCoordinator(DataUpdateCoordinator[dict[str, float]]):
     """Periodically reads all needed registers and provides them to the entities."""
 
     def __init__(
         self,
         hass: HomeAssistant,
+        unit: ModbusUnit,
         name: str,
-        host: str,
-        port: int,
-        device_id: int,
         scan_interval: int,
     ) -> None:
         super().__init__(
@@ -89,10 +165,11 @@ class WeishauptModbusCoordinator(DataUpdateCoordinator[dict[str, float]]):
             update_interval=timedelta(seconds=scan_interval),
         )
         self.device_name = name
-        self.host = host
-        self.port = port
-        self.device_id = device_id
-        self.client = AsyncModbusTcpClient(host, port=port)
+        # Unit on Home Assistant's shared Modbus connection (modbus integration).
+        # The connection is opened on the first request, reopened on the
+        # request after a drop, and closed by Home Assistant when the last
+        # config entry holding it unloads.
+        self.unit = unit
         # Addresses of holding registers that only answer as input registers.
         self._input_fallback: set[int] = set()
         # Keys of registers that already logged a read failure (so the
@@ -101,6 +178,9 @@ class WeishauptModbusCoordinator(DataUpdateCoordinator[dict[str, float]]):
         # Consecutive read failures per register key, reset on a successful
         # read. See CONSECUTIVE_FAILURES_BEFORE_DROP.
         self._consecutive_failures: dict[str, int] = {}
+        # Failed polls in a row since the last good one. See
+        # FAILED_POLLS_TOLERATED.
+        self._failed_polls = 0
         # Raw values written since the register was last polled. A refresh
         # requested after a write may be delayed, so this is the newest
         # known device value until the next poll.
@@ -117,32 +197,33 @@ class WeishauptModbusCoordinator(DataUpdateCoordinator[dict[str, float]]):
         self.pv_setpoint_last_value: float | None = None
         self.pv_surplus_follow_enabled: bool = False
 
-    async def _ensure_connected(self) -> None:
-        if not self.client.connected:
-            await self.client.connect()
-        if not self.client.connected:
-            raise UpdateFailed(f"Could not connect to {self.host}:{self.port}")
-
     async def _read_raw(
         self, reg_type: str, address: int, count: int
     ) -> list[int] | None:
-        """Reads consecutive registers, None if the controller rejects the request."""
+        """Reads consecutive registers, None if the controller rejects the request.
+
+        A request that gets no answer after its retries fails the whole poll
+        (UpdateFailed): the controller or the link is down, and walking the
+        remaining blocks would only wait out the same timeouts again.
+        """
+        read = (
+            self.unit.read_holding_registers
+            if reg_type == "holding"
+            else self.unit.read_input_registers
+        )
+        description = f"read of {count} {reg_type} register(s) at {address}"
         try:
-            if reg_type == "holding":
-                result = await self.client.read_holding_registers(
-                    address, count=count, device_id=self.device_id
-                )
-            else:
-                result = await self.client.read_input_registers(
-                    address, count=count, device_id=self.device_id
-                )
-        except ModbusException as err:
-            raise UpdateFailed(
-                f"Modbus error while reading address {address}: {err}"
-            ) from err
-        if result.isError():
+            values = await async_with_retries(
+                self.unit, partial(read, address, count), description
+            )
+        except ModbusExceptionError as err:
+            _LOGGER.debug("Controller rejected the %s: %s", description, err)
             return None
-        return list(result.registers)
+        except ModbusError as err:
+            raise UpdateFailed(
+                f"No answer to the {description}: {type(err).__name__}"
+            ) from err
+        return list(values)
 
     async def _read_single(
         self, reg: RegisterDef, primary_tried: bool
@@ -185,7 +266,30 @@ class WeishauptModbusCoordinator(DataUpdateCoordinator[dict[str, float]]):
         data[reg.key] = value if reg.scale == 1 else round(value * reg.scale, 6)
 
     async def _async_update_data(self) -> dict[str, float]:
-        await self._ensure_connected()
+        """Polls the controller; a short outage keeps the last values.
+
+        A poll that fails (no answer after the retries, connection lost)
+        returns the previous data for up to FAILED_POLLS_TOLERATED polls in a
+        row, so a brief outage does not flap every entity to unavailable.
+        Without previous data (the first refresh) it fails right away.
+        """
+        try:
+            data = await self._async_poll()
+        except UpdateFailed as err:
+            self._failed_polls += 1
+            if self.data is not None and self._failed_polls <= FAILED_POLLS_TOLERATED:
+                _LOGGER.debug(
+                    "Poll failed (%d of %d tolerated), keeping the last values: %s",
+                    self._failed_polls,
+                    FAILED_POLLS_TOLERATED,
+                    err,
+                )
+                return self.data
+            raise
+        self._failed_polls = 0
+        return data
+
+    async def _async_poll(self) -> dict[str, float]:
         data: dict[str, float] = {}
 
         # Only poll registers a currently-subscribed entity actually needs.
@@ -258,6 +362,9 @@ class WeishauptModbusCoordinator(DataUpdateCoordinator[dict[str, float]]):
         says it isn't stored in the EEPROM in the first place
         (`skip_unchanged_write=False`, e.g. SYSTEM_PV_SETPOINT_REGISTER),
         in which case it must be re-sent to stay in effect.
+
+        The write is retried like a read (see async_with_retries); that is
+        safe because it sets an absolute value.
         """
         if not reg.writable:
             raise ValueError(f"Register {reg.key} is not writable")
@@ -276,18 +383,18 @@ class WeishauptModbusCoordinator(DataUpdateCoordinator[dict[str, float]]):
                 self.async_update_listeners()
                 return
 
-        await self._ensure_connected()
         try:
-            result = await self.client.write_register(
-                reg.address, register, device_id=self.device_id
+            await async_with_retries(
+                self.unit,
+                partial(self.unit.write_register, reg.address, register),
+                f"write of {reg.key} (address {reg.address})",
             )
-            if result.isError():
-                raise UpdateFailed(f"Error writing {reg.key}: {result}")
-            self._written[reg.key] = raw_value
-        except ModbusException as err:
-            raise UpdateFailed(f"Modbus error while writing {reg.key}: {err}") from err
+        except ModbusExceptionError as err:
+            raise UpdateFailed(f"Error writing {reg.key}: {err}") from err
+        except ModbusError as err:
+            raise UpdateFailed(
+                f"Modbus error while writing {reg.key}: {type(err).__name__}"
+            ) from err
+        self._written[reg.key] = raw_value
 
         await self.async_request_refresh()
-
-    async def async_close(self) -> None:
-        self.client.close()

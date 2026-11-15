@@ -7,22 +7,23 @@ map is based on is in [docs/83807301.pdf](docs/83807301.pdf).
 
 ## Dependencies and architecture notes
 
-> **pymodbus `device_id`:** pymodbus renamed the `slave` parameter to
-> `device_id` in version 3.10.0. This integration uses `device_id`
-> throughout, and `manifest.json` requires `pymodbus>=3.11.0`.
-
-> **Modbus architecture:** Home Assistant is working on a shared-connection
-> `modbus_connection` integration, but as of its July 16, 2026 update the
-> approach is not recommended for new device integrations yet. This
-> integration keeps using `pymodbus` directly via its own
-> `AsyncModbusTcpClient` connection.
+> **Modbus architecture:** the integration takes a `ModbusUnit` from Home
+> Assistant's `modbus` integration
+> (`homeassistant.components.modbus.async_get_unit`, `manifest.json`:
+> `"dependencies": ["modbus"]`) instead of opening its own client. The
+> unit comes from the `modbus-connection` library (tmodbus backend), which
+> the `modbus` integration ships, so the manifest lists no requirements of
+> its own. Minimum Home Assistant version is 2026.10.1: 2026.10 brings
+> `ModbusUnit.require_timeout()` (modbus-connection 4.12), and 2026.10.1
+> (4.12.4) fixes a request failing with "connection is not established"
+> after the timeout was raised on a live link.
 
 ## File overview
 
 - `config_flow.py` – UI-based setup (name, IP, port, device ID) + connection
-  test, reconfigure flow, options flow (polling interval, room temperature
-  source per heating circuit)
-- `coordinator.py` – central Modbus connection, periodic polling
+  test, reconfigure flow, options flow (polling interval, timeout, room
+  temperature source per heating circuit)
+- `coordinator.py` – retries on the shared Modbus unit, periodic polling
   (`DataUpdateCoordinator`), block reading, writes
 - `const.py` – register map and all mappings (see below)
 - `entity.py` – base classes: device info, unique id, translation key
@@ -128,6 +129,68 @@ RegisterDef(
   below) of registers or entities briefly, spuriously going unavailable
   were the reason for this; [Varitras/weishaupt_modbus](https://github.com/Varitras/weishaupt_modbus)
   uses the same 4-failures threshold.
+
+## Connection, retries and timeout
+
+The shared connection (`async_get_unit` in `__init__.py`) leaves retries
+and recovery to its consumers; the coordinator handles them:
+
+- **No retries, no reconnect within a request.** The library runs tmodbus
+  with `retry_never` and `auto_reconnect=False`; a dropped link is only
+  reopened by the *next* request. `async_with_retries()` (`coordinator.py`)
+  wraps every request -- poll blocks, single reads, writes (including the
+  PV heartbeat and the PV-surplus switch, which run concurrently with the
+  poll):
+  - `ModbusExceptionError` (the controller answered with an error code):
+    final, no retry. The poll then falls back to single reads / function
+    code 0x04 as described above.
+  - `ModbusTimeoutError` / `ModbusDesyncError`: a failed answer, at most
+    `MAX_FAILED_ANSWERS` (3). A timeout leaves the link open -- a peer that
+    stopped answering would let every retry on it time out too -- so the
+    link is dropped with `ModbusUnit.disconnect()` before the retry. A
+    desync already drops it inside the library.
+  - `ModbusConnectionError`: not a failed answer (the retry runs on a new
+    link), at most `MAX_LOST_CONNECTIONS` (2) per request.
+    `ClientClosedError` (the connection was closed for good) is final.
+  - `RETRY_DELAY` (1 s) between attempts; each retry is logged at DEBUG
+    with its reason and counters.
+  Writes may be retried because every write of this integration sets an
+  absolute value. A write that timed out may still have reached the
+  controller, so a retry can cost one extra EEPROM cycle.
+- **A poll that gets no answer stops at the first block** that exhausted
+  its retries (`UpdateFailed`) instead of waiting out the same timeouts on
+  every remaining block.
+- **Short outages keep the last values.** `_async_update_data()` returns
+  the previous data for up to `FAILED_POLLS_TOLERATED` (3) failed polls in
+  a row before it lets `UpdateFailed` take the entities unavailable; the
+  first refresh (no previous data) fails right away. This is on top of the
+  per-register tolerance for rejected registers below.
+- **Timeout.** `unit.require_timeout()` is set from the `timeout` option
+  (3-10 s, default 5) before the first request: raising the timeout of a
+  live link drops it, lowering it only applies to the next link. On one
+  device the largest requirement of all consumers applies; the entry
+  withdraws its own on unload (`require_timeout(None)`). Without a
+  requirement the library uses 10 s. With 3 attempts, a short timeout keeps
+  one unanswered request at roughly 3 x timeout + 2 s.
+- **Idle connections.** Some devices close an idle TCP connection without
+  a clean shutdown. The debug log then shows, on the first poll after a
+  pause: timeout, timeout, "Connection lost", success. If that appears, the
+  polling interval is above the device's idle limit (or a keepalive read is
+  needed); the default 30 s has not shown it so far.
+- **Config flow.** `async_get_temporary_unit()` shares the connection of an
+  entry that already holds the device and otherwise closes it again. The
+  connection only opens on the first request, so the test reads a real
+  register (`CONNECTION_TEST_ADDRESS`).
+- **Logs.** `manifest.json` lists the `modbus_connection` and `tmodbus`
+  loggers, so "Enable debug logging" includes them. They are shared by every
+  integration on Modbus: a tmodbus warning "Received unexpected response
+  with Transaction ID ..." may belong to another integration (tell them
+  apart by the response's length and content).
+- **Tests.** `MockModbusUnit` from modbus-connection does not model
+  reconnects or timeout semantics, so the retry logic is tested with
+  `FakeUnit` (`tests/test_coordinator.py`), which raises scripted
+  exception sequences. The simulator tests run over the real shared
+  connection.
 
 ## Writing and the controller's EEPROM
 

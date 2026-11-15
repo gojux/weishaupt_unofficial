@@ -36,8 +36,11 @@ For architecture details and implementation notes, see
 
 Home Assistant **2026.10.1** or newer.
 
-This integration requires `pymodbus` version `3.11.0` or newer, which Home
-Assistant installs automatically.
+The integration talks to the heat pump through Home Assistant's own Modbus
+connection (the built-in **Modbus** integration, set up automatically — no
+YAML needed). Integrations that use the same device share one connection;
+from Home Assistant 2026.11 it is listed under **Settings → Devices &
+services → Connections**.
 
 Not every data point exists on every installation — the hydraulic scheme of
 your system determines which sensors and heating circuits are present, and
@@ -183,7 +186,13 @@ otherwise. The controller offers no operating modes for hot water.
 Available under the entry's three-dot menu → **Configure**:
 
 - **Polling interval** (seconds) — how often the integration reads data
-  from the controller.
+  from the controller. 30 seconds is recommended; much longer intervals
+  can let a device close the idle connection, which then costs a few
+  failed requests on the next poll.
+- **Timeout per request** (3–10 seconds, default 5) — how long to wait for
+  an answer. A request that gets no answer is tried up to 3 times, on a new
+  connection if needed; a short outage keeps the last values for up to 3
+  polls before entities become unavailable.
 - **Room temperature source** — see above, configurable per heating
   circuit.
 
@@ -216,6 +225,14 @@ cached by Home Assistant. Try, in order:
 and that Modbus TCP is enabled on the system device and reachable from
 your Home Assistant instance (same network / no firewall blocking the
 port).
+
+**Debug log.** On the integration's page choose **Enable debug logging**,
+reproduce the problem, then **Disable debug logging** to download the log.
+It includes the integration's own messages and those of the Modbus
+libraries (`modbus_connection`, `tmodbus`). The library loggers are shared
+by every integration using Modbus, so a library warning (e.g. "Received
+unexpected response with Transaction ID ...") may come from another
+integration.
 
 **A sensor shows `unknown`.** The controller reports "no sensor" for it,
 or the data point isn't available on your installation or controller

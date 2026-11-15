@@ -127,7 +127,7 @@ async def test_pv_setpoint_heartbeat_stays_silent_once_deactivated(
 
     coordinator = hass.data[DOMAIN][integration.entry_id]
     with patch.object(
-        coordinator.client, "write_register", wraps=coordinator.client.write_register
+        coordinator.unit, "write_register", wraps=coordinator.unit.write_register
     ) as write:
         async_fire_time_changed(
             hass, dt_util.utcnow() + PV_SETPOINT_HEARTBEAT_INTERVAL + timedelta(seconds=1)
@@ -279,7 +279,7 @@ async def test_unchanged_setpoint_is_not_written(
     climate = entity_id(hass, "climate", integration, "heating_circuit_1")
     coordinator = hass.data[DOMAIN][integration.entry_id]
     with patch.object(
-        coordinator.client, "write_register", wraps=coordinator.client.write_register
+        coordinator.unit, "write_register", wraps=coordinator.unit.write_register
     ) as write:
         await call(hass, "climate", "set_temperature", entity_id=climate, temperature=21.0)
         await call(hass, "climate", "set_preset_mode", entity_id=climate, preset_mode="normal")

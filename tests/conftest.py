@@ -27,6 +27,14 @@ def auto_enable_custom_integrations(enable_custom_integrations: None) -> None:
     """Makes Home Assistant load the integration from custom_components/."""
 
 
+@pytest.fixture(autouse=True)
+def no_retry_delay(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Retries run without the pause between attempts."""
+    monkeypatch.setattr(
+        "custom_components.weishaupt_unofficial.const.RETRY_DELAY", 0
+    )
+
+
 def free_port() -> int:
     with socket.socket() as sock:
         sock.bind(("127.0.0.1", 0))

@@ -39,7 +39,12 @@
           "general": {
             "name": "Allgemein",
             "data": {
-              "scan_interval": "Abfrageintervall (Sekunden)"
+              "scan_interval": "Abfrageintervall (Sekunden)",
+              "timeout": "Timeout pro Anfrage (Sekunden)"
+            },
+            "data_description": {
+              "scan_interval": "Wie oft die Wärmepumpe gelesen wird. Empfohlen sind 30 Sekunden; deutlich längere Intervalle können dazu führen, dass der Regler die ruhende Verbindung schließt.",
+              "timeout": "Wie lange auf eine Antwort gewartet wird, bevor eine Anfrage wiederholt wird (3-10 Sekunden, Standard 5). Jede Anfrage wird bis zu 3-mal versucht."
             }
           },
           "heating_circuit_1": {
