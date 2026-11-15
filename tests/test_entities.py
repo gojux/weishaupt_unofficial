@@ -312,3 +312,59 @@ async def test_standby_and_other_modes_map_to_hvac_modes(
         state = hass.states.get(climate)
         assert state.state == hvac, raw
         assert state.attributes["preset_mode"] == preset, raw
+
+
+async def test_entity_categories_and_defaults(hass: HomeAssistant, integration) -> None:
+    registry = er.async_get(hass)
+
+    def entry(platform: str, key: str) -> er.RegistryEntry:
+        return registry.async_get(entity_id(hass, platform, integration, key))
+
+    diagnostic = [
+        ("sensor", "error_code"),
+        ("sensor", "warning_code"),
+        ("sensor", "fault_free_code"),
+        ("sensor", "system_status"),
+        ("sensor", "outdoor_temp_2"),
+        ("sensor", "hydraulic_separator_temp"),
+        ("sensor", "regenerative_temp"),
+        ("sensor", "total_flow_temp"),
+        ("sensor", "second_generator_operating_hours"),
+        ("sensor", "e_heater_1_operating_hours"),
+        ("sensor", "e_heater_2_operating_hours"),
+        ("binary_sensor", "fault"),
+        ("binary_sensor", "second_generator_active"),
+        ("binary_sensor", "e_heater_1_active"),
+        ("binary_sensor", "e_heater_2_active"),
+    ]
+    for platform, key in diagnostic:
+        assert entry(platform, key).entity_category is er.EntityCategory.DIAGNOSTIC, key
+    assert entry("number", "dhw_lowered_target_temp").entity_category is (
+        er.EntityCategory.CONFIG
+    )
+    for platform, key in [
+        ("sensor", "outdoor_temp_1"),
+        ("sensor", "heat_pump_status"),
+        ("sensor", "energy_total_today"),
+        ("number", "pv_power_setpoint"),
+    ]:
+        assert entry(platform, key).entity_category is None, key
+
+    for key in [
+        "buffer_temp",
+        "hc1_room_temp",
+        "energy_total_yesterday",
+        "energy_heating_yesterday",
+        "energy_dhw_yesterday",
+        "energy_electrical_yesterday",
+        "electrical_power_input",
+    ]:
+        assert entry("sensor", key).disabled_by is er.RegistryEntryDisabler.INTEGRATION, key
+    for key in [
+        "energy_electrical_today",
+        "energy_electrical_month",
+        "energy_electrical_year",
+        "energy_total_today",
+        "error_code",
+    ]:
+        assert entry("sensor", key).disabled_by is None, key

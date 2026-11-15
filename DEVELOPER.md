@@ -72,6 +72,13 @@ RegisterDef(
   values at `41<n>03 ...` for circuit `<n>` = 1 ... 4. `_heating_circuit()`
   builds them, so circuits share translation keys and use the `{circuit}`
   placeholder (`RegisterDef.circuit` / `translation_key`).
+- **Entity category and default.** `RegisterDef.entity_category` marks
+  diagnostic values (fault/warning codes, status, operating hours,
+  secondary temperatures) and rarely changed settings (config);
+  `enabled_default=False` hides values not every installation has.
+  Home Assistant applies `enabled_default` only when an entity is first
+  registered, so changing it does not affect existing installations; the
+  category applies on every start.
 - **Adding a register:** add a `RegisterDef` to the matching list, then
   add the entity name to `strings.json` and `translations/de.json` (and
   `translations/en.json`, kept identical to `strings.json`). The test suite
@@ -79,8 +86,11 @@ RegisterDef(
 - **Registers beyond the official data point list.** `electrical_power_input`
   (`33126`) and `ELECTRICAL_STATISTICS_REGISTERS` (`36701 ... 36704`) are
   not in `83807301`; they come from community projects (see "Related
-  projects and further reading" below) and are disabled by default since
-  they are unconfirmed against the official document. `fault_free_code`
+  projects and further reading" below). `electrical_power_input` is
+  disabled by default since it is undocumented and not served by every
+  controller. The electrical energy statistics count on the controllers
+  seen so far, including the yearly total, and are enabled by default
+  (except "yesterday", like the other statistics). `fault_free_code`
   (`30005`), by contrast, *is* in the official list (section 3.2,
   "Fehlerfrei", same `FormatFehlermeldung` as `error_code`/`warning_code`)
   -- it was simply missed when this register map was first built from the

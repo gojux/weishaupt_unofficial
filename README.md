@@ -98,22 +98,30 @@ entry's three-dot menu → **Reconfigure**.
 ## What you get
 
 - **Sensors** — outdoor temperature, heat pump flow and return
-  temperature, buffer temperature, power demand, per heating circuit room,
-  flow and flow target temperature, domestic hot water temperature, and a
-  translated status sensor (shows the controller's operating status as
-  readable text in your HA language, e.g. "Heating" / "Defrost" /
-  "Legionella protection"). Operating hours of the second heat generator
-  and electric heaters as well as error, warning and fault-free codes are
-  available too. An **electrical power input** sensor and **electrical
-  energy statistics** are available disabled by default — they aren't in
-  the official data point list this integration is otherwise based on, see
-  [DEVELOPER.md](DEVELOPER.md) for where they come from.
-- **Fault** binary sensor, plus binary sensors for the second heat
-  generator and the electric heaters.
-- **Energy statistics** — energy today, yesterday, this month and this
-  year for total, heating, hot water and cooling.
+  temperature, power demand, per heating circuit flow and flow target
+  temperature, domestic hot water temperature, and a translated status
+  sensor (shows the controller's operating status as readable text in your
+  HA language, e.g. "Heating" / "Defrost" / "Legionella protection").
+- **Energy statistics** — energy today, this month and this year for
+  total, heating and hot water, and the **electrical energy** the heat pump
+  used today, this month and this year. "Yesterday" values and the cooling
+  statistics are available disabled by default.
+- **Diagnostic entities** (shown under *Diagnostic* on the device page) —
+  the **Fault** binary sensor, error, warning and fault-free codes, the
+  system status, the second heat generator and electric heaters (status and
+  operating hours) and less common temperatures (air intake, hydraulic
+  separator, regenerative, total flow). Most of them are disabled by
+  default.
+- **Disabled by default** — buffer temperature and the heating circuits'
+  room temperature (not every installation has these sensors; a heating
+  circuit can still show its room temperature, see below), and an
+  **electrical power input** sensor. Electrical power input and electrical
+  energy aren't in the official data point list this integration is
+  otherwise based on, see [DEVELOPER.md](DEVELOPER.md) for where they come
+  from.
 - **Domestic hot water (DHW)** — a `water_heater` entity, plus number
-  entities for the lowered setpoint and a one-off DHW charge ("push").
+  entities for a one-off DHW charge ("push") and the lowered setpoint
+  (listed under *Configuration*).
 - **System operating mode** — a `select` entity: Automatic, Heating,
   Cooling, Summer, Standby, Second heat generator.
 - **PV power setpoint** — a number entity to let the heat pump use up to a

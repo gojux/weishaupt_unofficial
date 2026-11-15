@@ -49,6 +49,7 @@ class WeishauptRegisterEntity(WeishauptEntity):
         if reg.circuit is not None:
             self._attr_translation_placeholders = {"circuit": str(reg.circuit)}
         self._attr_entity_registry_enabled_default = reg.enabled_default
+        self._attr_entity_category = reg.entity_category
 
     @property
     def register_value(self) -> float | None:

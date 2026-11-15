@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from typing import Literal
 
 from homeassistant.components.climate import HVACMode, PRESET_COMFORT
+from homeassistant.const import EntityCategory
 
 DOMAIN = "weishaupt_unofficial"
 
@@ -89,6 +90,9 @@ class RegisterDef:
     step: float | None = None
     precision: int | None = None  # suggested number of displayed decimals
     enabled_default: bool = True
+    # Diagnostic (fault codes, operating hours, secondary temperatures) or
+    # config (rarely changed settings); None for a primary entity.
+    entity_category: EntityCategory | None = None
     # Inclusive range of raw values considered available; a value outside
     # is not published. None means every raw value is accepted.
     valid_range: tuple[int, int] | None = None
@@ -119,6 +123,7 @@ def _temperature(
     address: int,
     *,
     enabled_default: bool = True,
+    entity_category: EntityCategory | None = None,
     circuit: int | None = None,
     translation_key: str | None = None,
 ) -> RegisterDef:
@@ -131,6 +136,7 @@ def _temperature(
         device_class="temperature",
         valid_range=SENSOR_RAW_RANGE,
         enabled_default=enabled_default,
+        entity_category=entity_category,
         circuit=circuit,
         translation_key=translation_key,
     )
@@ -145,6 +151,7 @@ def _operating_hours(key: str, address: int) -> RegisterDef:
         device_class="duration",
         state_class="total_increasing",
         enabled_default=False,
+        entity_category=EntityCategory.DIAGNOSTIC,
     )
 
 
@@ -154,7 +161,7 @@ def _operating_hours(key: str, address: int) -> RegisterDef:
 
 SYSTEM_STATUS_REGISTER = RegisterDef(
     key="system_status", address=30006, data_type="uint16", state_class=None,
-    enabled_default=False,
+    enabled_default=False, entity_category=EntityCategory.DIAGNOSTIC,
 )
 HEAT_PUMP_STATUS_REGISTER = RegisterDef(
     key="heat_pump_status", address=33101, data_type="uint16", state_class=None
@@ -201,6 +208,7 @@ DHW_LOWERED_TARGET_TEMP_REGISTER = RegisterDef(
     max_value=70.0,
     step=1.0,
     valid_range=SETPOINT_RAW_RANGE,
+    entity_category=EntityCategory.CONFIG,
 )
 # Runtime of a one-off DHW charge; 0 = inactive, otherwise 5 ... 240 minutes.
 DHW_PUSH_REGISTER = RegisterDef(
@@ -384,10 +392,12 @@ def _heating_circuit(number: int) -> HeatingCircuit:
             valid_range=SETPOINT_RAW_RANGE,
             circuit=number,
         ),
+        # Not every installation has a room sensor; the climate entity reads
+        # it regardless when its current-temperature source is Modbus.
         room_temp_reg=_temperature(
             f"{prefix}_room_temp",
             read_base + 2,
-            enabled_default=enabled,
+            enabled_default=False,
             circuit=number,
             translation_key="hc_room_temp",
         ),
@@ -451,7 +461,8 @@ STATISTICS_REGISTERS: list[RegisterDef] = [
         unit="kWh",
         device_class="energy",
         state_class=None if period == "yesterday" else "total_increasing",
-        enabled_default=category != "cooling",
+        # "Yesterday" repeats what the history of "today" already shows.
+        enabled_default=category != "cooling" and period != "yesterday",
     )
     for category, category_no in STATISTICS_CATEGORIES.items()
     for period, period_no in STATISTICS_PERIODS.items()
@@ -460,8 +471,10 @@ STATISTICS_REGISTERS: list[RegisterDef] = [
 # Electrical energy statistics at 36701 ... 36704 (today/yesterday/month/
 # year), the same format as STATISTICS_REGISTERS but not in the official
 # data point list (83807301); reported by a community Weishaupt monitoring
-# project (https://www.ingmar-kaiser.de/blog/weishaupt/). Disabled by
-# default since unconfirmed against the official document.
+# project (https://www.ingmar-kaiser.de/blog/weishaupt/). They count on the
+# controllers seen so far (including the yearly total), so they are enabled
+# by default except "yesterday", like STATISTICS_REGISTERS; they are needed
+# for performance factors.
 ELECTRICAL_STATISTICS_REGISTERS: list[RegisterDef] = [
     RegisterDef(
         key=f"energy_electrical_{period}",
@@ -470,16 +483,20 @@ ELECTRICAL_STATISTICS_REGISTERS: list[RegisterDef] = [
         unit="kWh",
         device_class="energy",
         state_class=None if period == "yesterday" else "total_increasing",
-        enabled_default=False,
+        enabled_default=period != "yesterday",
     )
     for period, period_no in STATISTICS_PERIODS.items()
 ]
 
 SENSOR_REGISTERS: list[RegisterDef] = [
     _temperature("outdoor_temp_1", 30001),
-    _temperature("outdoor_temp_2", 30002, enabled_default=False),
+    _temperature(
+        "outdoor_temp_2", 30002, enabled_default=False,
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
     RegisterDef(
         key="error_code",
+        entity_category=EntityCategory.DIAGNOSTIC,
         address=30003,
         data_type="uint16",
         state_class=None,
@@ -487,6 +504,7 @@ SENSOR_REGISTERS: list[RegisterDef] = [
     ),
     RegisterDef(
         key="warning_code",
+        entity_category=EntityCategory.DIAGNOSTIC,
         address=30004,
         data_type="uint16",
         state_class=None,
@@ -495,6 +513,7 @@ SENSOR_REGISTERS: list[RegisterDef] = [
     ),
     RegisterDef(
         key="fault_free_code",
+        entity_category=EntityCategory.DIAGNOSTIC,
         address=30005,
         data_type="uint16",
         state_class=None,
@@ -522,10 +541,20 @@ SENSOR_REGISTERS: list[RegisterDef] = [
     ),
     _temperature("heat_pump_flow_temp", 33104),
     _temperature("heat_pump_return_temp", 33105),
-    _temperature("hydraulic_separator_temp", 33108, enabled_default=False),
-    _temperature("regenerative_temp", 33109, enabled_default=False),
-    _temperature("buffer_temp", 33110),
-    _temperature("total_flow_temp", 33111, enabled_default=False),
+    _temperature(
+        "hydraulic_separator_temp", 33108, enabled_default=False,
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
+    _temperature(
+        "regenerative_temp", 33109, enabled_default=False,
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
+    # Not every hydraulic scheme has a buffer tank.
+    _temperature("buffer_temp", 33110, enabled_default=False),
+    _temperature(
+        "total_flow_temp", 33111, enabled_default=False,
+        entity_category=EntityCategory.DIAGNOSTIC,
+    ),
     DHW_TEMP_REGISTER,
     DHW_ACTIVE_TARGET_TEMP_REGISTER,
     *(
@@ -544,7 +573,8 @@ BINARY_SENSORS: list[BinarySensorDef] = [
     # 0 = fault active, 1 = operating without fault.
     BinarySensorDef(
         RegisterDef(
-            key="fault", address=33102, data_type="uint16", state_class=None
+            key="fault", address=33102, data_type="uint16", state_class=None,
+            entity_category=EntityCategory.DIAGNOSTIC,
         ),
         device_class="problem",
         on_value=0,
@@ -552,6 +582,7 @@ BINARY_SENSORS: list[BinarySensorDef] = [
     BinarySensorDef(
         RegisterDef(
             key="second_generator_active",
+            entity_category=EntityCategory.DIAGNOSTIC,
             address=34101,
             data_type="uint16",
             state_class=None,
@@ -562,6 +593,7 @@ BINARY_SENSORS: list[BinarySensorDef] = [
     BinarySensorDef(
         RegisterDef(
             key="e_heater_1_active",
+            entity_category=EntityCategory.DIAGNOSTIC,
             address=34104,
             data_type="uint16",
             state_class=None,
@@ -572,6 +604,7 @@ BINARY_SENSORS: list[BinarySensorDef] = [
     BinarySensorDef(
         RegisterDef(
             key="e_heater_2_active",
+            entity_category=EntityCategory.DIAGNOSTIC,
             address=34105,
             data_type="uint16",
             state_class=None,
