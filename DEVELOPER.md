@@ -145,6 +145,14 @@ RegisterDef(
   below) of registers or entities briefly, spuriously going unavailable
   were the reason for this; [Varitras/weishaupt_modbus](https://github.com/Varitras/weishaupt_modbus)
   uses the same 4-failures threshold.
+- **Registers the controller does not have.** A register rejected with
+  exception code 0x02 (illegal data address, `IllegalDataAddressError`)
+  `CONSECUTIVE_FAILURES_BEFORE_DROP` times in a row is added to
+  `_unsupported` and left out of the read plan until the entry reloads
+  (enabling an entity reloads it, too). Its reading shows the outcome
+  `unsupported`; the poll no longer splits its block into single reads
+  every cycle. Other exception codes (e.g. device busy) keep the register
+  polled.
 
 ## Connection, retries and timeout
 
@@ -218,7 +226,7 @@ name the address, though.
 
 | Line | Meaning |
 |---|---|
-| `Poll: 0.42 s, 18 requests (0 failed answers, 0 lost connections, 0 rejected), 33 registers: 32 published, 1 filtered, 0 rejected, 0 kept` | One per poll. *filtered*: read, but outside `valid_range` (no sensor, no setpoint request, ...). *rejected*: the controller refused the register. *kept*: refused, last value kept (see "Tolerating transient read failures"). |
+| `Poll: 0.42 s, 18 requests (0 failed answers, 0 lost connections, 0 rejected), 33 registers: 32 published, 1 filtered, 0 rejected, 0 kept, 0 unsupported` | One per poll. *filtered*: read, but outside `valid_range` (no sensor, no setpoint request, ...). *rejected*: the controller refused the register. *kept*: refused, last value kept (see "Tolerating transient read failures"). *unsupported*: not on this controller, no longer polled (see "Registers the controller does not have"). |
 | `Register outdoor_temp_2 (address 30002): raw 0x8000 = -32768, filtered (no sensor)` | Every polled register's raw word, once each time debug logging is switched on (and after setup). Tells a real `0.0` from a status word. Only registers of enabled entities are polled after setup. |
 | `heat_pump_status: 19 (heating) -> 43 (oil_recirculation) after 9 min 10 s` | A change of the heat pump or system status, with how long the previous one lasted. |
 | `Retrying read of ... after ModbusTimeoutError (failed answers 1/3, lost connections 0/2)` | A retry (see "Connection, retries and timeout"). |
@@ -226,8 +234,11 @@ name the address, though.
 | `Poll failed after ... s` / `Keeping the last values (failed poll 1 of 3 tolerated)` | A poll without an answer, and whether the last values are kept. |
 | `Writing dhw_normal_target_temp (address 42103): 55.0 (raw 550)` / `Wrote ...` / `Skipping write ...` / `... changed at the controller since the last poll ...` | The write path, including the fresh read before a skip. |
 
-Logged as **warnings**, once per register and value (repeats go to
-DEBUG), regardless of the log level:
+Logged as **warnings**, once per register and value (repeats are not
+logged; the raw value dump shows them again), regardless of the log level
+-- except during a poll of every register before entities subscribed
+(setup), where registers of disabled entities and missing hardware are
+expected to be odd and the finding goes to DEBUG:
 
 - a status code not in `HEAT_PUMP_STATUS_MAP` -- worth adding to the map;
 - a raw value outside `valid_range` that is not one of the
@@ -251,8 +262,9 @@ diagnostics download as well.
 - `connection` -- whether the link is up, connection drops and the request
   counters (`RequestCounters`);
 - `polling` -- interval, last success, failed polls in a row and in total,
-  registers read via function code 0x04 (`input_fallback_addresses`) and
-  registers rejected in a row;
+  registers read via function code 0x04 (`input_fallback_addresses`),
+  registers rejected in a row and registers no longer polled because the
+  controller does not have them (`unsupported_registers`);
 - `status` -- current heat pump / system status code and seconds in it;
 - `writes` -- values written since the last poll, PV setpoint state;
 - `registers` -- every register of the map by address with the last

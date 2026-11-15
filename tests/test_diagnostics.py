@@ -24,6 +24,7 @@ async def test_diagnostics_hold_registers_and_statistics(
     assert diagnostics["entry"]["data"]["device_id"] == 1
     assert diagnostics["connection"]["requests"] > 0
     assert diagnostics["polling"]["last_update_success"] is True
+    assert diagnostics["polling"]["unsupported_registers"] == []
     assert diagnostics["status"]["heat_pump_status"]["name"] == "heating"
 
     registers = {reg["key"]: reg for reg in diagnostics["registers"]}

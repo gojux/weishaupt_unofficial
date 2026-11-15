@@ -257,7 +257,9 @@ integration.
 
 **A sensor shows `unknown`.** The controller reports "no sensor" for it,
 or the data point isn't available on your installation or controller
-software version.
+software version. A data point the controller doesn't have is no longer
+requested after a few attempts, until the integration is reloaded; the
+diagnostics list it under `unsupported_registers`.
 
 **A heating circuit shows an operating mode that differs from what you
 set.** The heat pump ignores some settings during automatic operating

@@ -14,6 +14,7 @@ from modbus_connection import (
     ModbusConnectionError,
     ModbusDesyncError,
     ModbusTimeoutError,
+    ServerDeviceBusyError,
 )
 
 from custom_components.weishaupt_unofficial.const import (
@@ -393,22 +394,32 @@ async def test_status_changes_and_unknown_codes_are_logged(
         r for r in caplog.records
         if r.levelno == logging.WARNING and "undocumented status code 99" in r.getMessage()
     ]
-    assert len(warnings) == 1  # once per value; repeats go to DEBUG
+    assert len(warnings) == 1
+    # Once per value; repeats are not logged at all.
+    assert caplog.text.count("undocumented status code 99") == 1
 
 
 async def test_undocumented_out_of_range_value_is_warned_once(
     hass: HomeAssistant, caplog: pytest.LogCaptureFixture
 ) -> None:
+    caplog.set_level(logging.DEBUG, logger=LOGGER_NAME)
     reg = next(r for r in ALL_REGISTERS if r.key == "outdoor_temp_1")
     unit = FakeUnit([6000])  # 600.0 degC: outside -50 ... 500, not a status word
     coordinator = WeishauptModbusCoordinator(hass, unit, "Heat Pump", 30)
     with patch(
         "custom_components.weishaupt_unofficial.coordinator.ALL_REGISTERS", [reg]
     ):
+        # Full poll before any entity subscribed: DEBUG only.
         assert await coordinator._async_update_data() == {}
+        assert not [r for r in caplog.records if r.levelno == logging.WARNING]
+
+        unsubscribe = coordinator.async_add_listener(lambda: None, context=(reg.key,))
         await coordinator._async_update_data()
+        await coordinator._async_update_data()
+        unsubscribe()
     warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
     assert len(warnings) == 1 and "reported 6000" in warnings[0].getMessage()
+    assert caplog.text.count("reported 6000") == 2  # full poll + one warning
     assert coordinator.readings[reg.key].detail == "undocumented value"
 
 
@@ -425,3 +436,40 @@ async def test_retries_are_counted(hass: HomeAssistant) -> None:
     assert coordinator.counters.lost_connections == 1
     coordinator.handle_connection_lost()
     assert coordinator.connection_losses == 1
+
+
+async def test_register_missing_on_the_controller_is_no_longer_polled(
+    hass: HomeAssistant,
+) -> None:
+    reg = next(r for r in ALL_REGISTERS if r.key == "electrical_power_input")
+    unit = FakeUnit([IllegalDataAddressError("no such register")])
+    coordinator = WeishauptModbusCoordinator(hass, unit, "Heat Pump", 30)
+    with patch(
+        "custom_components.weishaupt_unofficial.coordinator.ALL_REGISTERS", [reg]
+    ):
+        for _ in range(CONSECUTIVE_FAILURES_BEFORE_DROP - 1):
+            await coordinator._async_update_data()
+        assert coordinator.readings[reg.key].outcome == "rejected"
+        await coordinator._async_update_data()
+        assert coordinator.unsupported_registers == [reg.key]
+        requests = len(unit.requests)
+
+        assert await coordinator._async_update_data() == {}
+    assert len(unit.requests) == requests
+    assert coordinator.readings[reg.key].outcome == "unsupported"
+    assert coordinator.consecutive_failures == {}
+
+
+async def test_register_rejected_for_other_reasons_stays_polled(
+    hass: HomeAssistant,
+) -> None:
+    reg = next(r for r in ALL_REGISTERS if r.key == "electrical_power_input")
+    unit = FakeUnit([ServerDeviceBusyError("busy")])
+    coordinator = WeishauptModbusCoordinator(hass, unit, "Heat Pump", 30)
+    with patch(
+        "custom_components.weishaupt_unofficial.coordinator.ALL_REGISTERS", [reg]
+    ):
+        for _ in range(CONSECUTIVE_FAILURES_BEFORE_DROP + 2):
+            await coordinator._async_update_data()
+    assert coordinator.unsupported_registers == []
+    assert len(unit.requests) == CONSECUTIVE_FAILURES_BEFORE_DROP + 2

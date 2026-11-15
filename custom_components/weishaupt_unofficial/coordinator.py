@@ -17,6 +17,7 @@ from homeassistant.util import dt as dt_util
 
 from modbus_connection import (
     ClientClosedError,
+    IllegalDataAddressError,
     ModbusConnectionError,
     ModbusDesyncError,
     ModbusError,
@@ -54,6 +55,7 @@ OUTCOME_PUBLISHED = "published"
 OUTCOME_FILTERED = "filtered"  # read, but outside valid_range
 OUTCOME_REJECTED = "rejected"  # the controller rejected the request
 OUTCOME_KEPT = "kept"  # rejected, last known value kept for now
+OUTCOME_UNSUPPORTED = "unsupported"  # not on this controller, no longer polled
 
 
 @dataclass
@@ -247,6 +249,11 @@ class WeishauptModbusCoordinator(DataUpdateCoordinator[dict[str, float]]):
         # Consecutive read failures per register key, reset on a successful
         # read. See CONSECUTIVE_FAILURES_BEFORE_DROP.
         self._consecutive_failures: dict[str, int] = {}
+        # Keys of registers this controller does not have: rejected as an
+        # illegal data address CONSECUTIVE_FAILURES_BEFORE_DROP times in a
+        # row. Not polled until the entry reloads (enabling an entity
+        # reloads it, too).
+        self._unsupported: set[str] = set()
         # Failed polls in a row since the last good one. See
         # FAILED_POLLS_TOLERATED.
         self._failed_polls = 0
@@ -272,6 +279,10 @@ class WeishauptModbusCoordinator(DataUpdateCoordinator[dict[str, float]]):
         self._status_since: dict[str, tuple[int | None, float]] = {}
         # (register key, raw value) already warned about as undocumented.
         self._warned_values: set[tuple[str, int]] = set()
+        # True during a poll of every register (no entity subscribed yet):
+        # registers of disabled entities and missing hardware are expected
+        # to be odd then, so their findings go to DEBUG only.
+        self._full_poll = False
         # Runtime state shared between WeishauptPvPowerSetpointNumber
         # (number.py) and WeishauptPvSurplusFollowSwitch (switch.py), which
         # have no direct reference to each other. `pv_setpoint_last_value`
@@ -300,6 +311,11 @@ class WeishauptModbusCoordinator(DataUpdateCoordinator[dict[str, float]]):
         return dict(self._consecutive_failures)
 
     @property
+    def unsupported_registers(self) -> list[str]:
+        """Registers this controller does not have, no longer polled."""
+        return sorted(self._unsupported)
+
+    @property
     def pending_writes(self) -> dict[str, int]:
         """Raw values written since the register was last polled."""
         return dict(self._written)
@@ -319,8 +335,8 @@ class WeishauptModbusCoordinator(DataUpdateCoordinator[dict[str, float]]):
 
     async def _read_raw(
         self, reg_type: str, address: int, count: int
-    ) -> list[int] | None:
-        """Reads consecutive registers, None if the controller rejects the request.
+    ) -> list[int] | ModbusExceptionError:
+        """Reads consecutive registers; the error if the controller rejects the request.
 
         A request that gets no answer after its retries fails the whole poll
         (UpdateFailed): the controller or the link is down, and walking the
@@ -338,7 +354,7 @@ class WeishauptModbusCoordinator(DataUpdateCoordinator[dict[str, float]]):
             )
         except ModbusExceptionError as err:
             _LOGGER.debug("Controller rejected the %s: %s", description, err)
-            return None
+            return err
         except ModbusError as err:
             raise UpdateFailed(
                 f"No answer to the {description}: {type(err).__name__}"
@@ -347,18 +363,19 @@ class WeishauptModbusCoordinator(DataUpdateCoordinator[dict[str, float]]):
 
     async def _read_single(
         self, reg: RegisterDef, primary_tried: bool
-    ) -> list[int] | None:
+    ) -> list[int] | ModbusExceptionError | None:
         """Reads one register. A holding register the controller does not
         serve as holding register is retried as input register, and read
         that way from then on. `primary_tried` says that the request with
-        the register's regular function code already failed."""
+        the register's regular function code already failed (None: no
+        further request was made)."""
         if reg.register_type == "holding" and reg.address not in self._input_fallback:
             if not primary_tried:
                 raw = await self._read_raw("holding", reg.address, 1)
-                if raw is not None:
+                if isinstance(raw, list):
                     return raw
             raw = await self._read_raw("input", reg.address, 1)
-            if raw is not None:
+            if isinstance(raw, list):
                 _LOGGER.info(
                     "Register %s (address %s) is only readable as input register",
                     reg.key,
@@ -408,10 +425,20 @@ class WeishauptModbusCoordinator(DataUpdateCoordinator[dict[str, float]]):
         readings[reg.key] = RegisterReading(reg.address, raw, value, OUTCOME_PUBLISHED)
 
     def _warn_once(self, reg: RegisterDef, value: int, msg: str, *args: object) -> None:
-        """Warns about an undocumented value once; repeats go to DEBUG."""
-        level = logging.DEBUG if (reg.key, value) in self._warned_values else logging.WARNING
+        """Warns about an undocumented value once per register and value.
+
+        Repeats are not logged; the raw value dump shows them again each
+        time debug logging is switched on. During a full poll the finding
+        goes to DEBUG and the warning stays due for when an entity uses
+        the register.
+        """
+        if (reg.key, value) in self._warned_values:
+            return
+        if self._full_poll:
+            _LOGGER.debug(msg, *args)
+            return
         self._warned_values.add((reg.key, value))
-        _LOGGER.log(level, msg, *args)
+        _LOGGER.warning(msg, *args)
 
     async def _async_update_data(self) -> dict[str, float]:
         """Polls the controller; a short outage keeps the last values.
@@ -470,7 +497,7 @@ class WeishauptModbusCoordinator(DataUpdateCoordinator[dict[str, float]]):
         outcomes = [reading.outcome for reading in readings.values()]
         _LOGGER.debug(
             "Poll: %.2f s, %s, %d registers: %d published, %d filtered, "
-            "%d rejected, %d kept",
+            "%d rejected, %d kept, %d unsupported",
             duration,
             self._format_counters(counters),
             len(readings),
@@ -478,6 +505,7 @@ class WeishauptModbusCoordinator(DataUpdateCoordinator[dict[str, float]]):
             outcomes.count(OUTCOME_FILTERED),
             outcomes.count(OUTCOME_REJECTED),
             outcomes.count(OUTCOME_KEPT),
+            outcomes.count(OUTCOME_UNSUPPORTED),
         )
         if not log_raw_values:
             return
@@ -542,21 +570,27 @@ class WeishauptModbusCoordinator(DataUpdateCoordinator[dict[str, float]]):
         for context in self.async_contexts():
             needed_keys.update(context)
 
-        registers_to_poll = (
-            [reg for reg in ALL_REGISTERS if reg.key in needed_keys]
-            if needed_keys
-            else ALL_REGISTERS
-        )
+        registers_to_poll = []
+        for reg in ALL_REGISTERS:
+            if needed_keys and reg.key not in needed_keys:
+                continue
+            if reg.key in self._unsupported:
+                readings[reg.key] = RegisterReading(
+                    reg.address, None, None, OUTCOME_UNSUPPORTED, "illegal data address"
+                )
+                continue
+            registers_to_poll.append(reg)
 
         # Registers of optional hardware (e.g. heating circuits 3 and 4) are
         # rejected by controllers without it, which is expected during the
         # initial full poll. Once entities subscribed, a rejected register
         # belongs to an enabled entity and is worth a warning.
-        failure_level = logging.WARNING if needed_keys else logging.DEBUG
+        self._full_poll = not needed_keys
+        failure_level = logging.DEBUG if self._full_poll else logging.WARNING
 
         for reg_type, block in plan_read_blocks(registers_to_poll, self._input_fallback):
             raw_values = await self._read_raw(reg_type, block[0].address, len(block))
-            if raw_values is not None and len(raw_values) == len(block):
+            if isinstance(raw_values, list) and len(raw_values) == len(block):
                 for reg, raw in zip(block, raw_values):
                     self._store(data, readings, reg, raw)
                 continue
@@ -565,7 +599,9 @@ class WeishauptModbusCoordinator(DataUpdateCoordinator[dict[str, float]]):
             # installed) must not hide its neighbours: read them one by one.
             for reg in block:
                 raw_single = await self._read_single(reg, primary_tried=len(block) == 1)
-                if raw_single is None:
+                if not isinstance(raw_single, list):
+                    # A single-register block was rejected by the block read.
+                    error = raw_values if raw_single is None else raw_single
                     if reg.key not in self._failed_keys:
                         self._failed_keys.add(reg.key)
                         _LOGGER.log(
@@ -577,6 +613,25 @@ class WeishauptModbusCoordinator(DataUpdateCoordinator[dict[str, float]]):
                         )
                     failures = self._consecutive_failures.get(reg.key, 0) + 1
                     self._consecutive_failures[reg.key] = failures
+                    if failures >= CONSECUTIVE_FAILURES_BEFORE_DROP and isinstance(
+                        error, IllegalDataAddressError
+                    ):
+                        self._unsupported.add(reg.key)
+                        self._consecutive_failures.pop(reg.key)
+                        _LOGGER.log(
+                            failure_level,
+                            "Register %s (address %s) does not exist on this "
+                            "controller (illegal data address %d times in a row); "
+                            "not polled until the integration is reloaded",
+                            reg.key,
+                            reg.address,
+                            failures,
+                        )
+                        readings[reg.key] = RegisterReading(
+                            reg.address, None, None, OUTCOME_UNSUPPORTED,
+                            "illegal data address",
+                        )
+                        continue
                     outcome = OUTCOME_REJECTED
                     # Fewer than CONSECUTIVE_FAILURES_BEFORE_DROP failures in
                     # a row: keep showing the last known value rather than
@@ -608,7 +663,7 @@ class WeishauptModbusCoordinator(DataUpdateCoordinator[dict[str, float]]):
         except UpdateFailed as err:
             _LOGGER.debug("Fresh read of %s before writing failed: %s", reg.key, err)
             return False
-        if raw is None:
+        if not isinstance(raw, list):
             _LOGGER.debug("Fresh read of %s before writing was rejected", reg.key)
             return False
         held = decode_value(raw[0], reg.data_type)

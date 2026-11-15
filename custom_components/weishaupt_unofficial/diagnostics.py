@@ -127,6 +127,7 @@ async def async_get_config_entry_diagnostics(
             "failed_polls_total": coordinator.failed_polls_total,
             "input_fallback_addresses": coordinator.input_fallback_addresses,
             "consecutive_failures": coordinator.consecutive_failures,
+            "unsupported_registers": coordinator.unsupported_registers,
         },
         "status": _status(coordinator),
         "writes": {
