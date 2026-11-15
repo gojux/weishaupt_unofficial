@@ -173,7 +173,8 @@ the entry's three-dot menu → **Configure**:
 
 The `water_heater` entity shows the tank temperature and lets you change
 the **normal** target temperature. Its state is *Heating* while the heat
-pump is heating hot water (including legionella protection) and *Idle*
+pump is heating hot water (including legionella protection and hot water
+in SG Ready states 3 and 4) and *Idle*
 otherwise. The controller offers no operating modes for hot water.
 
 - **Lowered target temperature** — number entity for the setpoint used

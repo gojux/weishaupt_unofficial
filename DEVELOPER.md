@@ -199,7 +199,12 @@ cycles). `async_write_value()` therefore skips a write whose value equals
 the current one. "Current" is the value last written since the register
 was last polled (`_written`), else the polled value — a refresh requested
 after a write can be delayed by the coordinator's debouncer, so the polled
-data alone may be stale right after a write. A skipped write still calls
+data alone may be stale right after a write. Before a write is actually
+dropped, `_controller_holds()` reads the register fresh: the value may
+have been changed at the controller's panel since the last poll. Only if
+the controller confirms the value is the write skipped; a fresh read that
+fails or is rejected lets the write go ahead (a needless write costs one
+EEPROM cycle, a wrongly skipped one loses the setpoint). A skipped write still calls
 `async_update_listeners()`, so entities can resolve a pending optimistic
 change.
 

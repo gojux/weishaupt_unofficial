@@ -353,6 +353,34 @@ class WeishauptModbusCoordinator(DataUpdateCoordinator[dict[str, float]]):
 
         return data
 
+    async def _controller_holds(self, reg: RegisterDef, raw_value: int) -> bool:
+        """Whether the controller holds `raw_value` in `reg` right now.
+
+        Reads the register fresh (with retries and the input fallback). A
+        register that cannot be read counts as "not held": a needless write
+        costs one EEPROM cycle, a wrongly skipped one loses the setpoint.
+        """
+        try:
+            raw = await self._read_single(reg, primary_tried=False)
+        except UpdateFailed as err:
+            _LOGGER.debug("Fresh read of %s before writing failed: %s", reg.key, err)
+            return False
+        if raw is None:
+            _LOGGER.debug("Fresh read of %s before writing was rejected", reg.key)
+            return False
+        held = decode_value(raw[0], reg.data_type)
+        if held != raw_value:
+            _LOGGER.debug(
+                "%s changed at the controller since the last poll (known %s, "
+                "controller %s): writing %s",
+                reg.key,
+                raw_value,
+                held,
+                raw_value,
+            )
+            return False
+        return True
+
     async def async_write_value(self, reg: RegisterDef, value: float) -> None:
         """Writes a value to a holding register and refreshes the data afterwards.
 
@@ -377,7 +405,10 @@ class WeishauptModbusCoordinator(DataUpdateCoordinator[dict[str, float]]):
             if current is None:
                 polled = (self.data or {}).get(reg.key)
                 current = round(polled / reg.scale) if polled is not None else None
-            if current == raw_value:
+            # The known value may be stale (e.g. changed at the controller's
+            # panel since the last poll): confirm it with a fresh read before
+            # dropping the write.
+            if current == raw_value and await self._controller_holds(reg, raw_value):
                 _LOGGER.debug("Skipping write of %s: value is already set", reg.key)
                 # Lets entities confirm a pending change against the unchanged data.
                 self.async_update_listeners()

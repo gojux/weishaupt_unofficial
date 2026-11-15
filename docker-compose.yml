@@ -31,6 +31,9 @@ services:
       - ./tests/modbus_simulator.py:/app/modbus_simulator.py:ro
 
   tests:
+    # One image per Home Assistant version, so a run never reuses an image
+    # built for another TEST_HA_VERSION.
+    image: weishaupt-unofficial-tests:ha-${TEST_HA_VERSION:-2026.10.1}
     build:
       context: .
       dockerfile: tests/Dockerfile

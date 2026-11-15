@@ -67,9 +67,15 @@ async def test_water_heater(
     await call(hass, "water_heater", "set_temperature", entity_id=water_heater, temperature=55)
     assert await simulator.read(42103) == 550
 
-    await simulator.write(33101, 20)
+    # Hot water, legionella protection, hot water in SG Ready state 3 and 4
+    for code in (20, 21, 39, 42):
+        await simulator.write(33101, code)
+        await hass.data[DOMAIN][integration.entry_id].async_refresh()
+        assert hass.states.get(water_heater).state == "heating", code
+
+    await simulator.write(33101, 19)  # heating
     await hass.data[DOMAIN][integration.entry_id].async_refresh()
-    assert hass.states.get(water_heater).state == "heating"
+    assert hass.states.get(water_heater).state == "idle"
 
 
 async def test_number_and_select(

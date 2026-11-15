@@ -242,6 +242,34 @@ async def test_write_is_skipped_when_value_is_unchanged(
     assert await simulator.read(42103) == 550
 
 
+async def test_write_is_not_skipped_when_the_controller_changed(
+    hass: HomeAssistant, integration, simulator: Simulator
+) -> None:
+    """The polled value may be stale: a setpoint changed at the controller's
+    panel since the last poll must still be written back."""
+    coordinator = hass.data[DOMAIN][integration.entry_id]
+    reg: RegisterDef = next(r for r in ALL_REGISTERS if r.key == "dhw_normal_target_temp")
+    assert coordinator.data[reg.key] == 50.0
+    await simulator.write(42103, 520)  # changed at the panel, not yet polled
+    with patch.object(
+        coordinator.unit, "write_register", wraps=coordinator.unit.write_register
+    ) as write:
+        await coordinator.async_write_value(reg, 50.0)
+        assert write.call_count == 1
+    assert await simulator.read(42103) == 500
+
+
+async def test_write_goes_ahead_when_the_fresh_read_fails(hass: HomeAssistant) -> None:
+    """Without a confirmation from the controller the write is not skipped."""
+    reg = next(r for r in ALL_REGISTERS if r.key == "dhw_normal_target_temp")
+    unit = FakeUnit([timeout()], holding=[timeout()])
+    coordinator = WeishauptModbusCoordinator(hass, unit, "Heat Pump", 30)
+    coordinator.data = {reg.key: 50.0}
+    with patch.object(coordinator, "async_request_refresh"):
+        await coordinator.async_write_value(reg, 50.0)
+    assert unit.writes == [(42103, 500)]
+
+
 async def test_pv_setpoint_write_is_never_skipped(
     hass: HomeAssistant, integration, simulator: Simulator
 ) -> None:

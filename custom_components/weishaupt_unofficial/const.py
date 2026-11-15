@@ -245,9 +245,10 @@ NUMBER_REGISTERS: list[RegisterDef] = [
     SYSTEM_PV_SETPOINT_REGISTER,
 ]
 
-# Status codes (see HEAT_PUMP_STATUS_MAP) during which DHW is being heated,
+# Status codes (see HEAT_PUMP_STATUS_MAP) during which DHW is being heated
+# (hot water, legionella protection, hot water in SG Ready state 3 and 4),
 # and the water_heater states derived from them.
-DHW_ACTIVE_STATUS_CODES: tuple[int, ...] = (20, 21)
+DHW_ACTIVE_STATUS_CODES: tuple[int, ...] = (20, 21, 39, 42)
 DHW_STATE_HEATING = "heating"
 DHW_STATE_IDLE = "idle"
 
