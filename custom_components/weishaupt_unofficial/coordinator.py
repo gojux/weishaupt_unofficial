@@ -406,6 +406,12 @@ class WeishauptModbusCoordinator(DataUpdateCoordinator[dict[str, float]]):
             reg.valid_range[0] <= value <= reg.valid_range[1]
         ):
             meaning = DOCUMENTED_SENTINELS.get(reg.valid_range, {}).get(value)
+            if (state := dict(reg.named_values).get(value)) is not None:
+                data[reg.key] = state
+                readings[reg.key] = RegisterReading(
+                    reg.address, raw, value, OUTCOME_PUBLISHED, meaning
+                )
+                return
             if meaning is None:
                 self._warn_once(
                     reg,

@@ -169,13 +169,22 @@
         "name": "Außentemperatur 2"
       },
       "error_code": {
-        "name": "Fehlercode"
+        "name": "Fehlercode",
+        "state": {
+          "no_code": "Kein Fehler"
+        }
       },
       "warning_code": {
-        "name": "Warncode"
+        "name": "Warncode",
+        "state": {
+          "no_code": "Keine Warnung"
+        }
       },
       "fault_free_code": {
-        "name": "Fehlerfrei-Code"
+        "name": "Fehlerfrei-Code",
+        "state": {
+          "no_code": "Kein Fehlercode"
+        }
       },
       "power_demand": {
         "name": "Leistungsanforderung"

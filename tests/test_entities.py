@@ -37,12 +37,10 @@ async def test_sensor_states(hass: HomeAssistant, integration) -> None:
     assert state("number", "dhw_lowered_target_temp").state == "40.0"
 
 
-async def test_entities_without_data_have_no_value(
+async def test_optional_entities_are_disabled_by_default(
     hass: HomeAssistant, integration
 ) -> None:
     registry = er.async_get(hass)
-    # Sentinel value 'no sensor' and 'no code active' are not published.
-    assert hass.states.get(entity_id(hass, "sensor", integration, "error_code")).state == "unknown"
     # Circuits 2 ... 4 and optional sensors are disabled by default.
     for platform, key in (
         ("climate", "heating_circuit_2"),
@@ -53,6 +51,19 @@ async def test_entities_without_data_have_no_value(
     ):
         entry = registry.async_get(entity_id(hass, platform, integration, key))
         assert entry.disabled_by is er.RegistryEntryDisabler.INTEGRATION, key
+
+
+async def test_error_code_shows_no_code_or_the_code(
+    hass: HomeAssistant, integration, simulator: Simulator
+) -> None:
+    error_code = entity_id(hass, "sensor", integration, "error_code")
+    # 65535: no code active, a translated state.
+    assert hass.states.get(error_code).state == "no_code"
+
+    await simulator.write(30003, 1234)
+    await hass.data[DOMAIN][integration.entry_id].async_refresh()
+    await hass.async_block_till_done()
+    assert hass.states.get(error_code).state == "1234"
 
 
 async def test_water_heater(

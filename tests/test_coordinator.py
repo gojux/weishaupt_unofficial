@@ -201,10 +201,11 @@ async def test_first_refresh_reads_valid_values_only(
     assert data["hc1_heating_curve"] == 0.75
     # implausible heating curve
     assert "hc2_heating_curve" not in data
-    # sensor not installed / no value / no code active
+    # sensor not installed / no value
     assert "outdoor_temp_2" not in data
     assert "hc2_room_target_temp" not in data
-    assert "error_code" not in data
+    # no code active: a named state
+    assert data["error_code"] == "no_code"
     # heating circuits 3 and 4 are not installed
     assert not any(key.startswith(("hc3_", "hc4_")) for key in data)
 

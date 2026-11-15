@@ -52,7 +52,8 @@ class WeishauptSensor(WeishauptRegisterEntity, SensorEntity):
             self._attr_suggested_display_precision = reg.precision
 
     @property
-    def native_value(self) -> float | None:
+    def native_value(self) -> float | str | None:
+        """The value, or a named state such as "no_code" (see named_values)."""
         return self.register_value
 
 

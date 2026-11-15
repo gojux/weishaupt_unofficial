@@ -131,6 +131,16 @@ def test_status_and_mode_states_are_translated() -> None:
     )
 
 
+def test_named_values_are_translated() -> None:
+    strings = json.loads((COMPONENT / "strings.json").read_text())
+    sensors = strings["entity"]["sensor"]
+    named = [reg for reg in SENSOR_REGISTERS if reg.named_values]
+    assert {reg.key for reg in named} == {"error_code", "warning_code", "fault_free_code"}
+    for reg in named:
+        states = sensors[reg.translation_key or reg.key]["state"]
+        assert {state for _, state in reg.named_values} == set(states), reg.key
+
+
 def test_options_sections_exist_for_every_heating_circuit() -> None:
     strings = json.loads((COMPONENT / "strings.json").read_text())
     sections = strings["options"]["step"]["init"]["sections"]

@@ -69,6 +69,12 @@ RegisterDef(
   the sensor range for a setpoint register too, which would wrongly accept
   a setpoint's `1` ("no setpoint request") as a valid 0.1°C -- this
   integration keeps the two ranges separate for that reason.
+  `RegisterDef.named_values` is the exception: a raw value listed there is
+  published as a named state instead of being left out. The error, warning
+  and fault-free codes use it for `65535` ("Kein Fehlercode aktiv"), shown
+  as `no_code` and translated per sensor ("No error", "No warning", "No
+  error code") under the entity's `state` key, like an enum option; any
+  other code stays a number.
 - **Heating circuits** follow a pattern: values at `31<n>01 ...`, writable
   values at `41<n>03 ...` for circuit `<n>` = 1 ... 4. `_heating_circuit()`
   builds them, so circuits share translation keys and use the `{circuit}`

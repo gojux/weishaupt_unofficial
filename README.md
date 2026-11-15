@@ -111,7 +111,10 @@ entry's three-dot menu → **Reconfigure**.
   system status, the second heat generator and electric heaters (status and
   operating hours), the heating curve of each heating circuit (read only)
   and less common temperatures (air intake, hydraulic separator,
-  regenerative, total flow). Most of them are disabled by default.
+  regenerative, total flow). Most of them are disabled by default. The
+  error, warning and fault-free codes show the controller's code number, or
+  "No error" / "No warning" / "No error code" while no code is active
+  (state `no_code`).
 - **Disabled by default** — buffer temperature and the heating circuits'
   room temperature (not every installation has these sensors; a heating
   circuit can still show its room temperature, see below), and an

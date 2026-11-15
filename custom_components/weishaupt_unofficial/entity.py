@@ -52,6 +52,6 @@ class WeishauptRegisterEntity(WeishauptEntity):
         self._attr_entity_category = reg.entity_category
 
     @property
-    def register_value(self) -> float | None:
+    def register_value(self) -> float | str | None:
         """The decoded register value, None while it is not available."""
         return self.coordinator.data.get(self._reg.key)

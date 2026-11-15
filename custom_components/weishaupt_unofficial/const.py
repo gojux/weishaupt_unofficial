@@ -70,6 +70,9 @@ CONNECTION_TEST_ADDRESS = 30001
 SENSOR_RAW_RANGE = (-500, 5000)      # "Format Sensor": -50.0 ... 500.0°C
 SETPOINT_RAW_RANGE = (50, 5000)      # "FormatSollwert": 5.0 ... 500.0°C
 CODE_RAW_RANGE = (0, 65534)          # "FormatFehlermeldung": error/warning code
+# "FormatFehlermeldung" 65535 ("Kein Fehlercode aktiv"), shown as a state.
+NO_CODE_STATE = "no_code"
+CODE_NAMED_VALUES = ((65535, NO_CODE_STATE),)
 
 # Raw values outside a register's valid_range that the data point list
 # documents, by range, with what they mean. Used for the debug log; any
@@ -116,6 +119,10 @@ class RegisterDef:
     # Inclusive range of raw values considered available; a value outside
     # is not published. None means every raw value is accepted.
     valid_range: tuple[int, int] | None = None
+    # Raw values outside valid_range published as a named state instead of
+    # being filtered (raw value, state); the state is translated like an
+    # enum option under the entity's "state" key.
+    named_values: tuple[tuple[int, str], ...] = ()
     # Heating circuit number for registers whose name contains it; passed to
     # the translation as the {circuit} placeholder.
     circuit: int | None = None
@@ -539,6 +546,7 @@ SENSOR_REGISTERS: list[RegisterDef] = [
         data_type="uint16",
         state_class=None,
         valid_range=CODE_RAW_RANGE,
+        named_values=CODE_NAMED_VALUES,
     ),
     RegisterDef(
         key="warning_code",
@@ -547,6 +555,7 @@ SENSOR_REGISTERS: list[RegisterDef] = [
         data_type="uint16",
         state_class=None,
         valid_range=CODE_RAW_RANGE,
+        named_values=CODE_NAMED_VALUES,
         enabled_default=False,
     ),
     RegisterDef(
@@ -556,6 +565,7 @@ SENSOR_REGISTERS: list[RegisterDef] = [
         data_type="uint16",
         state_class=None,
         valid_range=CODE_RAW_RANGE,
+        named_values=CODE_NAMED_VALUES,
         enabled_default=False,
     ),
     RegisterDef(

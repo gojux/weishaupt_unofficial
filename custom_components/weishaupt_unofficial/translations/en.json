@@ -169,13 +169,22 @@
         "name": "Outdoor temperature 2"
       },
       "error_code": {
-        "name": "Error code"
+        "name": "Error code",
+        "state": {
+          "no_code": "No error"
+        }
       },
       "warning_code": {
-        "name": "Warning code"
+        "name": "Warning code",
+        "state": {
+          "no_code": "No warning"
+        }
       },
       "fault_free_code": {
-        "name": "Fault-free code"
+        "name": "Fault-free code",
+        "state": {
+          "no_code": "No error code"
+        }
       },
       "power_demand": {
         "name": "Power demand"
